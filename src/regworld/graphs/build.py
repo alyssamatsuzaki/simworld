@@ -146,7 +146,13 @@ def build_graphs(
     net = cfg.network
 
     supply_true = _supply_graph(
-        size, sector, z, net.supply_m, net.alpha, net.homophily, rng,
+        size,
+        sector,
+        z,
+        net.supply_m,
+        net.alpha,
+        net.homophily,
+        rng,
         smallworld=net.name == "smallworld",
     )
     supply_obs = _degrade_directed(supply_true, cfg.dgp.edge_dropout, cfg.dgp.edge_spurious, n, rng)
@@ -161,11 +167,28 @@ def build_graphs(
     market: nx.Graph = nx.Graph()
     market.add_nodes_from([f"seg_{j}" for j in range(s)], bipartite=0)
     market.add_nodes_from([f"firm_{i}" for i in range(n)], bipartite=1)
+
+    # A market edge is the only route through which a firm can receive demand.
+    # Give every firm a coverage edge first so no firm starts structurally unable
+    # to trade. Segment choice still follows the firm's sector match.
+    for i in range(n):
+        w_segment = seg_pref[:, sector[i]].astype(np.float64, copy=True)
+        w_segment = w_segment / w_segment.sum()
+        j = int(rng.choice(s, p=w_segment))
+        market.add_edge(f"seg_{j}", f"firm_{i}")
+
+    # Retain the preferential market structure as extra links. Sampling only
+    # non-neighbours makes `firms_per_segment` mean additional opportunities,
+    # rather than silently spending draws on coverage edges already present.
     for j in range(s):
-        w = size * seg_pref[j, sector]
+        connected = {int(str(node)[5:]) for node in market.neighbors(f"seg_{j}")}
+        candidates = np.array([i for i in range(n) if i not in connected], dtype=np.int64)
+        if candidates.size == 0:
+            continue
+        w = size[candidates] * seg_pref[j, sector[candidates]]
         w = w / w.sum()
-        k = min(net.firms_per_segment, n)
-        firms_j = rng.choice(n, size=k, replace=False, p=w)
+        k = min(net.firms_per_segment, candidates.size)
+        firms_j = rng.choice(candidates, size=k, replace=False, p=w)
         for i in firms_j:
             market.add_edge(f"seg_{j}", f"firm_{int(i)}")
 

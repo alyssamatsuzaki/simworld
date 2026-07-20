@@ -56,11 +56,56 @@ def stage_recon(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_data(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 2, Stage 1")
+    """Stage 1: generate the world, degrade it, ingest the analysis panel (§10)."""
+    from regworld.data.duck import build_views
+    from regworld.data.generate import generate_ground_truth
+    from regworld.data.ingest import ingest
+
+    result = generate_ground_truth(cfg)
+    panel_path = ingest(cfg)
+    views = build_views(cfg)
+    tracker.log_metrics(
+        {
+            "data_observed_artifacts": len(result.observed_paths),
+            "data_sealed_artifacts": len(result.sealed_paths),
+        }
+    )
+    return [*result.observed_paths, *result.sealed_paths, panel_path, views]
 
 
 def stage_graphs(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 2, Stage 2")
+    """Stage 2: observed edges -> metrics + PyG HeteroData (§10)."""
+    import json
+
+    import polars as pl
+    import torch
+
+    from regworld.data.store import observed_dir
+    from regworld.graphs.to_pyg import hetero_from_edges, static_node_features
+
+    gdir = observed_dir(cfg) / "graphs"
+    edges = {p.stem: pl.read_parquet(p) for p in sorted(gdir.glob("*.parquet"))}
+    registry = pl.read_parquet(observed_dir(cfg) / "firm_registry.parquet")
+    survey = pl.read_parquet(observed_dir(cfg) / "consumer_survey.parquet")
+    data = hetero_from_edges(cfg, edges, static_node_features(cfg, registry, survey))
+    out_dir = Path(cfg.paths.graphs)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    hetero_path = out_dir / "hetero_observed.pt"
+    torch.save(data, hetero_path)
+    summary_path = out_dir / "hetero_summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "node_types": {k: int(data[k].x.shape[0]) for k in data.node_types},
+                "edge_types": {
+                    "__".join(et): int(data[et].edge_index.shape[1]) for et in data.edge_types
+                },
+            },
+            indent=2,
+        )
+    )
+    tracker.log_metrics({"graph_edge_types": float(len(data.edge_types))})
+    return [hetero_path, summary_path]
 
 
 def stage_abm(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
