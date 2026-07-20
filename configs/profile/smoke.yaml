@@ -1,0 +1,33 @@
+# @package _global_
+profile_name: smoke
+population:
+  n_firms: 200
+  n_consumer_segments: 6
+  n_regions: 4
+calibration:
+  design_points: 32
+  replicates: 2
+  nuts: {warmup: 150, draws: 150, chains: 2}
+  smc_abc: {particles: 256, rounds: 3}
+emulator:
+  train_episodes: 64
+  epochs: 3
+  train_steps: 300
+  batch_size: 8
+rl:
+  total_timesteps: 5000
+  n_envs: 4
+  marl_timesteps: 2000
+ensemble:
+  posterior_draws: 8
+  n_seeds: 1
+  policies: [none, uniform_low, uniform_high, targeted, phased_targeted, rl_ppo]
+sensitivity:
+  sobol_n: 64
+  morris_trajectories: 4
+  optuna_trials: 2
+  bo_evals: 4
+  abm_check_points: 8
+eval:
+  abm_validation_episodes: 8
+  n_dist_rollouts: 32

@@ -1,0 +1,3 @@
+name: ray_cluster
+address: ${oc.env:RAY_ADDRESS,null}
+num_cpus: null

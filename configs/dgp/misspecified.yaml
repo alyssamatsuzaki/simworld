@@ -1,0 +1,7 @@
+# @package _global_
+dgp:
+  variant: misspecified
+  corr_z_size: 0.35
+  decision_rule: logit_interacted
+network:
+  homophily: 1.5

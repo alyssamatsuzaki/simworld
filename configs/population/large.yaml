@@ -1,0 +1,6 @@
+name: large
+n_firms: 20000
+n_consumer_segments: 40
+n_regions: 8
+n_sectors: 6
+n_associations: 4

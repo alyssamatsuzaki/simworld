@@ -1,0 +1,7 @@
+method: morris
+morris_trajectories: 8
+sobol_n: 1024
+top_k: 8
+optuna_trials: 12
+bo_evals: 40
+abm_check_points: 64

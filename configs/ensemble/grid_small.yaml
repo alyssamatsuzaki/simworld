@@ -1,0 +1,6 @@
+name: grid_small
+posterior_draws: 1000
+n_seeds: 3
+policies: [none, uniform_low, uniform_high, targeted, phased_targeted, rl_ppo, rl_dreamer]
+validation_frac: 0.05
+batch_size: 64

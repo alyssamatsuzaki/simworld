@@ -1,0 +1,6 @@
+name: grid_full
+posterior_draws: 4000
+n_seeds: 5
+policies: [none, uniform_low, uniform_high, targeted, phased_targeted, rl_ppo, rl_dreamer]
+validation_frac: 0.05
+batch_size: 64

@@ -1,0 +1,14 @@
+method: pymc_nuts
+crosscheck: true
+design_points: 256
+replicates: 8
+nuts:
+  warmup: 1000
+  draws: 1000
+  chains: 4
+smc_abc:
+  particles: 2000
+  rounds: 4
+  quantile: 0.5
+device: cpu
+did_penalty: 0.0

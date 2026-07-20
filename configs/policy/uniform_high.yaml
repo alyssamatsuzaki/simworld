@@ -1,0 +1,7 @@
+name: uniform_high
+kind: static
+enforcement: 0.9
+targeting: 0.0
+phase_speed: 0.9
+subsidy: 0.0
+source: none

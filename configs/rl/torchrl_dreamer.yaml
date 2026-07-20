@@ -1,0 +1,6 @@
+algo: torchrl_dreamer
+total_timesteps: 300000
+n_envs: 8
+train_dreamer: true
+marl_timesteps: 200000
+marl_backend: ippo

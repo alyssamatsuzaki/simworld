@@ -1,0 +1,7 @@
+name: targeted
+kind: static
+enforcement: 0.6
+targeting: 0.8
+phase_speed: 0.7
+subsidy: 0.0
+source: none

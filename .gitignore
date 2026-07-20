@@ -1,0 +1,28 @@
+# python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.python-version.local
+
+# run outputs
+experiments/
+artifacts/
+*.zarr
+mlruns/
+wandb/
+reports/eval/
+reports/figures/
+reports/run_manifest.json
+reports/simulator_discrepancy.md
+
+# tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.stage_skips
+
+# OS
+.DS_Store

@@ -1,0 +1,60 @@
+defaults:
+  - _self_
+  - compute: ray_local
+  - data: synthetic
+  - population: base
+  - network: scalefree
+  - behavior: logit_sticky
+  - abm: default
+  - objective: balanced
+  - calibration: numpyro_nuts
+  - causal: default
+  - emulator: rssm_gnn
+  - env: single_agent
+  - policy: phased_targeted
+  - rl: sb3_ppo
+  - ensemble: grid_small
+  - sensitivity: sobol
+  - tracking: mlflow
+  - eval: fast
+  - dgp: confounded            # after network: the variant sets network.homophily
+  - profile: smoke             # last: the scaling story wins on size knobs (see DEVIATIONS.md)
+
+force_stage: null                # re-run this stage + everything downstream
+isolated_envs: false             # run each stage as a subprocess (§5 fallback)
+seed: 0
+seeds: [0, 1, 2, 3, 4]           # every headline claim runs across all of these
+horizon_quarters: 24             # Regime F forecast horizon, and Regime P history length
+observed_quarters: 12            # Regime P observation window (q13-24 = backtest holdout)
+device: auto                     # auto | cpu | cuda
+
+paths:
+  root:      ${oc.env:REGWORLD_ARTIFACT_ROOT,artifacts}
+  data:      ${paths.root}/data
+  graphs:    ${paths.root}/graphs
+  reports:   reports
+
+stages:                          # the driver reads this; any stage can be turned off
+  recon: true
+  data: true
+  graphs: true
+  abm: true
+  tensorized_abm: true
+  calibration: true
+  causal: true
+  emulator: true
+  envs: true
+  marl: true
+  rl: true
+  ensemble: true
+  sensitivity: true
+  figures: true
+  report: true
+
+hydra:
+  job:
+    chdir: false
+  run:
+    dir: experiments/${now:%Y-%m-%d}/${now:%H-%M-%S}-${hydra.job.name}
+  sweep:
+    dir: experiments/multirun/${now:%Y-%m-%d}/${now:%H-%M-%S}

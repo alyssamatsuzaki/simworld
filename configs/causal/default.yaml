@@ -1,0 +1,6 @@
+e_low: 0.2
+e_high: 0.8
+n_do_seeds: 64
+on_disagreement: recalibrate
+run_discovery: true
+refuter_subset_frac: 0.8

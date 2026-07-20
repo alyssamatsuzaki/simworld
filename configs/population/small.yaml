@@ -1,0 +1,6 @@
+name: small
+n_firms: 200
+n_consumer_segments: 6
+n_regions: 4
+n_sectors: 6
+n_associations: 4

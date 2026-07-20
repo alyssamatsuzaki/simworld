@@ -1,0 +1,26 @@
+# @package _global_
+profile_name: full
+population:
+  n_firms: 20000
+  n_consumer_segments: 40
+  n_regions: 8
+calibration:
+  design_points: 1024
+  replicates: 16
+  nuts: {warmup: 2000, draws: 2000, chains: 4}
+  smc_abc: {particles: 8000}
+emulator:
+  train_episodes: 20000
+  epochs: 150
+  train_steps: 200000
+rl:
+  total_timesteps: 3000000
+ensemble:
+  posterior_draws: 4000
+  n_seeds: 5
+sensitivity:
+  sobol_n: 8192
+  optuna_trials: 60
+  bo_evals: 200
+eval:
+  abm_validation_episodes: 256

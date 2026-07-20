@@ -1,0 +1,7 @@
+name: bo_optimal
+kind: learned
+enforcement: 0.0
+targeting: 0.0
+phase_speed: 0.0
+subsidy: 0.0
+source: bo

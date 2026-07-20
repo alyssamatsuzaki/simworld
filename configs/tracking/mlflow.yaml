@@ -1,0 +1,3 @@
+backend: mlflow
+uri: sqlite:///experiments/mlflow.db
+experiment: regworld
