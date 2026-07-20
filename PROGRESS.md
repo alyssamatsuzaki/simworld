@@ -5,7 +5,7 @@ Run started: 2026-07-19   Agent session: 2   Git HEAD: Phase 2 gate (see latest 
 ## Phase status
 - [x] 1 Foundation (gate green; CI runs on push)
 - [x] 2 World & data (gate green)
-- [ ] 3 Simulation
+- [x] 3 Simulation (gate green)
 - [ ] 4 Inference
 - [ ] 5 Emulator
 - [ ] 6 Control & ensemble
@@ -17,13 +17,13 @@ Run started: 2026-07-19   Agent session: 2   Git HEAD: Phase 2 gate (see latest 
 | 0 recon | DONE | GATE-0-OK | uv 0.11.29, py3.12, all extras resolved; see DEVIATIONS |
 | 1 data | DONE | GATE-1-OK | Raw §8 observations, observed-only analysis hats, deterministic Parquet, DuckDB views; 18 focused tests pass |
 | 2 graphs | DONE | GATE-2-OK | Complete-demand NetworkX graph pair, metrics, PyG static/dynamic feature contract; 9 focused tests pass |
-| 3 abm | | | |
-| 3b tensorized | | | |
+| 3 abm | DONE | GATE-3-OK | Mesa 3.5 AgentSet model, observed-only fresh forecast world, deterministic DataCollector outputs; 10 contract tests pass |
+| 3b tensorized | DONE | 32-seed KS p > 0.05 | Pure-PyTorch sparse differentiable ABM; shapes, gradients, determinism, and Mesa agreement pass |
 | 4 calibration | | | |
 | 5 causal | | | |
 | 6+7 emulator | | | |
-| 8 envs | | | |
-| 9 marl env | | | |
+| 8 envs | DONE (ABM half) | GATE-8-OK | Gymnasium AbmEnv check_env, deterministic reset, and terminated/truncated semantics; EmulatorEnv lands in Phase 5 |
+| 9 marl env | DONE | GATE-9-OK | PettingZoo Parallel API (100 cycles), top-K strategic firms, live pre-draw action effects and profit rewards |
 | 10 rl | | | |
 | 11 ensemble | | | |
 | 12 hydra | | | |
@@ -42,5 +42,5 @@ and total-regulation-onset estimand.
 (empty if clean)
 
 ## Next action
-Phase 3, Stage 3: Mesa ABM + tensorized agreement, then Gymnasium/PettingZoo envs
-(PLAN.md §10 Stages 3, 3b, 8, 9).
+Phase 4, Stage 4: NumPyro micro calibration + macro SMC-ABC + PyMC/ArviZ checks,
+then Stage 5 causal identification and the four-number simulator gate.

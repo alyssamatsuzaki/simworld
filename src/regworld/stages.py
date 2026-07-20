@@ -109,11 +109,38 @@ def stage_graphs(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_abm(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 3, Stage 3")
+    """Stage 3: observed-world Mesa model under the configured policy."""
+    from regworld.abm.collect import run_observed_abm
+
+    trajectory, paths = run_observed_abm(cfg, include_tensorized=False)
+    terminal = trajectory.outcomes[-1]
+    tracker.log_metrics(
+        {
+            "abm_terminal_compliance": terminal.compliance_rate,
+            "abm_terminal_hhi": terminal.hhi,
+            "abm_terminal_exit_rate": terminal.exit_rate_cum,
+            "abm_quarters": float(len(trajectory.outcomes)),
+        }
+    )
+    return paths
 
 
 def stage_tensorized_abm(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 3, Stage 3b")
+    """Stage 3b: differentiable sparse-tensor simulation on observed inputs."""
+    import polars as pl
+
+    from regworld.abm.collect import run_tensorized_abm
+
+    paths = run_tensorized_abm(cfg)
+    terminal = pl.read_parquet(paths[0]).tail(1).to_dicts()[0]
+    tracker.log_metrics(
+        {
+            "tensor_terminal_compliance": float(terminal["compliance_rate"]),
+            "tensor_terminal_hhi": float(terminal["hhi"]),
+            "tensor_terminal_exit_rate": float(terminal["exit_rate"]),
+        }
+    )
+    return paths
 
 
 def stage_calibration(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
@@ -129,11 +156,63 @@ def stage_emulator(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_envs(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 3/5, Stage 8")
+    """Stage 8 checkpoint: validate and record the current Gymnasium contract."""
+    from regworld.environments.abm_env import AbmEnv
+
+    env = AbmEnv(cfg)
+    observation, _ = env.reset(seed=cfg.seed)
+    env.action_space.seed(cfg.seed)
+    _, reward, terminated, truncated, _ = env.step(env.action_space.sample())
+    out = Path(cfg.paths.root) / "envs" / "abm_contract.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(
+            {
+                "backend": "mesa",
+                "observation_shape": list(observation.shape),
+                "action_shape": list(env.action_space.shape or ()),
+                "reward_finite": bool(float("-inf") < reward < float("inf")),
+                "terminated": terminated,
+                "truncated": truncated,
+            },
+            indent=2,
+        )
+    )
+    tracker.log_metrics({"env_observation_dims": float(observation.size)})
+    env.close()
+    return [out]
 
 
 def stage_marl(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 3, Stage 9")
+    """Stage 9 checkpoint: exercise one strategic Parallel-API transition."""
+    from regworld.environments.marl_env import RegulationMARLEnv
+
+    env = RegulationMARLEnv(cfg)
+    observations, _ = env.reset(seed=cfg.seed)
+    actions = {
+        agent: env.action_space(agent).low.copy()  # type: ignore[attr-defined]
+        for agent in env.agents
+    }
+    _, rewards, terminations, truncations, _ = env.step(actions)
+    out = Path(cfg.paths.root) / "envs" / "marl_contract.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(
+        json.dumps(
+            {
+                "agents": list(observations),
+                "n_agents": len(observations),
+                "rewards_finite": all(
+                    float("-inf") < value < float("inf") for value in rewards.values()
+                ),
+                "terminations": terminations,
+                "truncations": truncations,
+            },
+            indent=2,
+        )
+    )
+    tracker.log_metrics({"marl_agents": float(len(observations))})
+    env.close()
+    return [out]
 
 
 def stage_rl(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
