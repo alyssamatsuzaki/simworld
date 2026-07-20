@@ -1,8 +1,9 @@
 """Thin wrapper binding theta* to the shared decision rules (§7.4).
 
-The DGP always runs on the TRUE graph with `use_z=True` — the beta_capacity * z term
-exists in the world and in no fitted model. The `interacted` flag is on only under
-dgp=misspecified.
+The confounded and misspecified worlds include the latent ``beta_capacity * z``
+term. The recovery-control world omits it so ``dgp=wellspecified`` is genuinely the
+same likelihood Stage 4 fits. The ``interacted`` flag is exclusive to the separate
+misspecified variant.
 """
 
 from __future__ import annotations
@@ -69,8 +70,10 @@ def run_dgp(
     (Regime F: national onset). A large t_start (> quarters) means "never treated".
     """
     rng = np.random.default_rng(seed)
-    state = start_state if start_state is not None else initial_state(
-        firms, segments, graphs, CONSTANTS, rng
+    state = (
+        start_state
+        if start_state is not None
+        else initial_state(firms, segments, graphs, CONSTANTS, rng)
     )
     interacted = cfg.dgp.decision_rule == "logit_interacted"
     outcomes: list[QuarterOutcome] = []
@@ -86,7 +89,7 @@ def run_dgp(
             levers,
             rng,
             t_start=t_start,
-            use_z=True,
+            use_z=cfg.dgp.variant != "wellspecified",
             sticky=True,
             interacted=interacted,
         )

@@ -44,12 +44,29 @@ class Theta:
     delta_exit: float = 0.25  # exit-hazard scale (small-firm fragility)
 
     def group_a_names(self) -> list[str]:
-        return ["beta_0", "beta_enforce", "beta_cost", "beta_peer", "beta_assoc",
-                "beta_size", "beta_customer", "phi_phase", "beta_stick", "q0", "q1"]
+        return [
+            "beta_0",
+            "beta_enforce",
+            "beta_cost",
+            "beta_peer",
+            "beta_assoc",
+            "beta_size",
+            "beta_customer",
+            "phi_phase",
+            "beta_stick",
+            "q0",
+            "q1",
+        ]
 
     def group_b_names(self) -> list[str]:
-        return ["gamma_scale", "ell_learn", "alpha_trust", "rho_influence",
-                "mu_privacy", "delta_exit"]
+        return [
+            "gamma_scale",
+            "ell_learn",
+            "alpha_trust",
+            "rho_influence",
+            "mu_privacy",
+            "delta_exit",
+        ]
 
 
 @dataclass(frozen=True)
@@ -163,8 +180,15 @@ class QuarterOutcome:
 
 
 OUTCOME_VARIABLES = [
-    "compliance_rate", "compliance_rate_weighted", "hhi", "mean_trust",
-    "consumer_surplus", "exit_rate", "enforcement_cost", "reward", "backfire",
+    "compliance_rate",
+    "compliance_rate_weighted",
+    "hhi",
+    "mean_trust",
+    "consumer_surplus",
+    "exit_rate",
+    "enforcement_cost",
+    "reward",
+    "backfire",
 ]
 
 
@@ -185,8 +209,10 @@ def audit_probabilities(
     """w_it and alpha_it (§7.4). `active` masks firms whose region has enforcement on."""
     tau = abs(levers.targeting)
     # tau > 0 targets large + previously non-compliant; tau < 0 flips to target small firms
-    size_term = firms.size**const.target_gamma if levers.targeting >= 0 else (
-        (1.0 / np.maximum(firms.size, 1e-9)) ** const.target_gamma
+    size_term = (
+        firms.size**const.target_gamma
+        if levers.targeting >= 0
+        else ((1.0 / np.maximum(firms.size, 1e-9)) ** const.target_gamma)
     )
     w = (1.0 - tau) + tau * size_term * (1.0 - state.y)
     w = w * state.alive * active
@@ -316,9 +342,7 @@ def firm_utility(
     return u
 
 
-def draw_audits(
-    alpha: np.ndarray, rng: np.random.Generator
-) -> np.ndarray:
+def draw_audits(alpha: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """Sample ~ floor(sum(alpha)) audits without replacement with probs proportional to alpha."""
     n_audits = int(np.floor(np.sum(alpha)))
     audited = np.zeros(alpha.shape[0], dtype=bool)
@@ -340,9 +364,12 @@ def step_consumers(
     theta: Theta,
     const: Constants,
     rng: np.random.Generator,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """Trust update + spend reallocation (§7.4). Returns (trust', spend', revenue', CS)."""
-    rev_total = np.maximum(state.revenue.sum(), 1e-9)
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float, np.ndarray]:
+    """Trust update + spend reallocation (§7.4).
+
+    The sampled utility matrix is returned so a same-quarter exit can remove firms
+    and redistribute demand without drawing a second, inconsistent consumer shock.
+    """
     spend_share = state.spend / np.maximum(state.spend.sum(axis=1, keepdims=True), 1e-9)
     exposure = spend_share @ (state.y * state.alive)  # (S,)
     social = graphs.influence @ state.trust - state.trust
@@ -361,21 +388,36 @@ def step_consumers(
         + theta.mu_privacy * segments.privacy[:, None] * (state.y * state.alive)[None, :]
         + rng.normal(0.0, const.spend_utility_noise, size=(segments.weight.size, firms.n))
     )
-    mask = graphs.market_mask & state.alive[None, :]
-    v_masked = np.where(mask, v, -np.inf)
+    spend, revenue, cs = allocate_spend(v, state.alive, graphs.market_mask, segments)
+    return trust, spend, revenue, cs, v
+
+
+def allocate_spend(
+    utility: np.ndarray,
+    alive: np.ndarray,
+    market_mask: np.ndarray,
+    segments: SegmentAttributes,
+) -> tuple[np.ndarray, np.ndarray, float]:
+    """Allocate each segment's budget over its linked, surviving firms.
+
+    Keeping this separate from the stochastic trust/utility update lets the exit
+    step re-run the softmax with the *same* utility draw. Thus newly exited firms
+    have zero spend and revenue in the quarter's reported market outcomes.
+    """
+    mask = market_mask & alive[None, :]
+    v_masked = np.where(mask, utility, -np.inf)
     # consumer surplus: logit inclusive value, weight-weighted (§7.6)
     lse = logsumexp(v_masked, axis=1)
     lse = np.where(np.isfinite(lse), lse, 0.0)
     cs = float(np.sum(segments.weight * lse))
-    vmax = np.max(np.where(mask, v, -np.inf), axis=1, keepdims=True)
+    vmax = np.max(v_masked, axis=1, keepdims=True)
     vmax = np.where(np.isfinite(vmax), vmax, 0.0)
-    expv = np.where(mask, np.exp(v - vmax), 0.0)
+    expv = np.where(mask, np.exp(utility - vmax), 0.0)
     denom = np.maximum(expv.sum(axis=1, keepdims=True), 1e-12)
     shares = expv / denom
     spend = segments.budget[:, None] * shares
     revenue = spend.sum(axis=0)
-    _ = rev_total
-    return trust, spend, revenue, cs
+    return spend, revenue, cs
 
 
 def step_market_and_exit(
@@ -396,7 +438,9 @@ def step_market_and_exit(
     rolling = rev_hist[:, -filled:].mean(axis=1)
     floor = const.exit_floor * firms.size  # baseline revenue ~ size (median-normalized)
     below = np.where(rolling < floor, state.below_floor + 1, 0)
-    hazard = np.minimum(1.0, theta.delta_exit * np.abs(margin) * (1.0 / np.maximum(firms.size, 1e-9)))
+    hazard = np.minimum(
+        1.0, theta.delta_exit * np.abs(margin) * (1.0 / np.maximum(firms.size, 1e-9))
+    )
     at_risk = state.alive & (below >= 2)
     exits = at_risk & (rng.random(firms.n) < hazard)
     alive = state.alive & ~exits
@@ -447,9 +491,19 @@ def step_quarter(
     log_size = np.log(np.maximum(firms.size, 1e-9))
 
     u = firm_utility(
-        theta=theta, const=const, q=q, kappa=kappa, n_peer=n_peer, m_assoc=m_assoc,
-        log_size=log_size, x_privacy=x_priv, phi=phi, y_prev=state.y,
-        z=firms.z if use_z else None, sticky=sticky, interacted=interacted,
+        theta=theta,
+        const=const,
+        q=q,
+        kappa=kappa,
+        n_peer=n_peer,
+        m_assoc=m_assoc,
+        log_size=log_size,
+        x_privacy=x_priv,
+        phi=phi,
+        y_prev=state.y,
+        z=firms.z if use_z else None,
+        sticky=sticky,
+        interacted=interacted,
     )
     y_prob = expit(u)
     draws = rng.random(firms.n)
@@ -478,12 +532,17 @@ def step_quarter(
     )
 
     interim = replace(state, y=y_new, fines=fines, audited=audited, publicity=publicity)
-    trust, spend, revenue, cs = step_consumers(interim, firms, segments, graphs, theta, const, rng)
-    alive, rev_hist, below = step_market_and_exit(
-        interim, firms, theta, const, kappa, revenue, rng
+    trust, spend, revenue, cs, spend_utility = step_consumers(
+        interim, firms, segments, graphs, theta, const, rng
     )
-    # exited firms release their spend next quarter (their column is masked in the softmax)
-    tenure = np.where(y_new > 0.5, state.tenure + 1, 0.0)
+    alive, rev_hist, below = step_market_and_exit(interim, firms, theta, const, kappa, revenue, rng)
+    # Newly exited firms leave this quarter's reported market immediately. Re-run
+    # only the deterministic allocation with the same utility shock so HHI, CS,
+    # spend, and revenue all describe the same survivor set.
+    if not np.array_equal(alive, state.alive):
+        spend, revenue, cs = allocate_spend(spend_utility, alive, graphs.market_mask, segments)
+        rev_hist[:, -1] = revenue
+    tenure = np.where((y_new > 0.5) & alive, state.tenure + 1, 0.0)
 
     new_state = WorldState(
         y=y_new * alive,
@@ -557,7 +616,7 @@ def regulator_reward(
         - w_s * max(0.0, baseline.consumer_surplus - outcome.consumer_surplus) / cs0
         - w_e * outcome.enforcement_cost / max(e_max, 1e-9)
         + w_t * (outcome.mean_trust - baseline.mean_trust)
-        - w_x * outcome.exit_rate_cum
+        - w_x * max(0.0, outcome.exit_rate_cum - baseline.exit_rate_cum)
     )
 
 

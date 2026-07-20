@@ -23,8 +23,7 @@ TRUST_REPORT_SD = 0.05
 def _flip(y: np.ndarray, q0: float, q1: float, rng: np.random.Generator) -> np.ndarray:
     """Misclassify: P(report 1 | true 0) = q0, P(report 0 | true 1) = q1."""
     u = rng.random(y.shape)
-    reported = np.where(y > 0.5, (u >= q1).astype(np.float64), (u < q0).astype(np.float64))
-    return reported
+    return np.where(y > 0.5, u >= q1, u < q0)
 
 
 def firm_registry(firms: FirmAttributes, rng: np.random.Generator) -> pl.DataFrame:
@@ -54,11 +53,11 @@ def firm_panel(
     """A `panel_sample_frac` sample of firms, quarters 1..observed_quarters.
 
     reported_compliant at quarter q reflects the true state at q-1 (one-quarter
-    reporting lag) with q0/q1 misclassification. Decision-time covariates are dated
-    at the decision quarter itself (what the firm faced when it chose).
+    reporting lag) with q0/q1 misclassification. The raw table intentionally contains
+    only observables from PLAN.md §8; analyst regressors are estimated during ingest.
     """
     n = firms.n
-    n_sample = max(int(round(cfg.dgp.panel_sample_frac * n)), 10)
+    n_sample = max(round(cfg.dgp.panel_sample_frac * n), 10)
     sampled = np.sort(rng.choice(n, size=min(n_sample, n), replace=False))
     frames = []
     q0, q1 = cfg.dgp.misclassification, cfg.dgp.misclassification
@@ -67,9 +66,7 @@ def firm_panel(
         covs = traj.covariates[t]
         y_prev = covs["compliant_lag"]  # true y at t-1
         reported = _flip(y_prev, q0, q1, rng)
-        revenue_noisy = covs["revenue"] * np.exp(
-            rng.normal(0.0, REVENUE_NOISE_SD, size=n)
-        )
+        revenue_noisy = covs["revenue"] * np.exp(rng.normal(0.0, REVENUE_NOISE_SD, size=n))
         frames.append(
             pl.DataFrame(
                 {
@@ -79,18 +76,11 @@ def firm_panel(
                     "treatment_quarter": np.where(
                         t_start[sampled] >= NEVER_TREATED, -1, t_start[sampled] + 1
                     ).astype(np.int64),
-                    "reported_compliant": reported[sampled],
+                    "reported_compliant": reported[sampled].astype(bool),
                     "revenue_noisy": revenue_noisy[sampled],
                     "audited": covs["audited"][sampled].astype(bool),
                     "fined": covs["fined"][sampled].astype(bool),
                     "alive": covs["alive"][sampled].astype(bool),
-                    "perceived_risk": covs["perceived_risk"][sampled],
-                    "cost_share": covs["cost_share"][sampled],
-                    "neighbor_compliant_share": covs["neighbor_compliant_share"][sampled],
-                    "assoc_compliant_share": covs["assoc_compliant_share"][sampled],
-                    "privacy_rev_share": covs["privacy_rev_share"][sampled],
-                    "phase_phi": covs["phase_phi"][sampled],
-                    "compliant_lag": covs["compliant_lag"][sampled],
                 }
             )
         )
@@ -175,9 +165,9 @@ def regime_p_full(
                     "audited": covs["audited"].astype(bool),
                     "revenue": covs["revenue"],
                     "region": firms.region,
-                    "treatment_quarter": np.where(
-                        t_start >= NEVER_TREATED, -1, t_start + 1
-                    ).astype(np.int64),
+                    "treatment_quarter": np.where(t_start >= NEVER_TREATED, -1, t_start + 1).astype(
+                        np.int64
+                    ),
                     "size": firms.size,
                     "capacity_z": firms.z,
                     "perceived_risk": covs["perceived_risk"],

@@ -45,28 +45,15 @@ FIRM_PANEL = TableSpec(
         "quarter": I64,
         "region": I64,
         "treatment_quarter": I64,
-        "reported_compliant": F64,
+        "reported_compliant": BOOL,
         "revenue_noisy": F64,
         "audited": BOOL,
         "fined": BOOL,
         "alive": BOOL,
-        "perceived_risk": F64,
-        "cost_share": F64,
-        "neighbor_compliant_share": F64,
-        "assoc_compliant_share": F64,
-        "privacy_rev_share": F64,
-        "phase_phi": F64,
-        "compliant_lag": F64,
     },
     non_null=("firm_id", "quarter", "region", "reported_compliant"),
     unique_key=("firm_id", "quarter"),
-    ranges={
-        "reported_compliant": (0.0, 1.0),
-        "neighbor_compliant_share": (0.0, 1.0),
-        "assoc_compliant_share": (0.0, 1.0),
-        "phase_phi": (0.0, 1.0),
-        "compliant_lag": (0.0, 1.0),
-    },
+    ranges={"revenue_noisy": (0.0, float("inf"))},
 )
 
 AGGREGATE_SERIES = TableSpec(
@@ -132,6 +119,18 @@ PANEL_ANALYSIS = TableSpec(
     },
     non_null=("firm_id", "quarter", "outcome_reported"),
     unique_key=("firm_id", "quarter"),
+    ranges={
+        "outcome_reported": (0.0, 1.0),
+        "treated": (0.0, 1.0),
+        "perceived_risk": (0.0, float("inf")),
+        "cost_share": (0.0, float("inf")),
+        "neighbor_compliant_share": (0.0, 1.0),
+        "assoc_compliant_share": (0.0, 1.0),
+        "privacy_rev_share": (0.0, 1.0),
+        "phase_phi": (0.0, 1.0),
+        "compliant_lag": (0.0, 1.0),
+        "audited_prev": (0.0, 1.0),
+    },
 )
 
 ALL_OBSERVED = {
@@ -142,11 +141,18 @@ ALL_OBSERVED = {
 def validate_table(df: pl.DataFrame, spec: TableSpec) -> None:
     """Raise ValueError on any schema/nullability/range/key violation."""
     problems: list[str] = []
+    extra = [col for col in df.columns if col not in spec.schema]
+    if extra:
+        problems.append(f"unexpected columns {extra}")
     for col, dtype in spec.schema.items():
         if col not in df.columns:
             problems.append(f"missing column {col}")
         elif df.schema[col] != dtype:
             problems.append(f"{col}: expected {dtype}, got {df.schema[col]}")
+        elif dtype == F64:
+            n_nonfinite = int(df.select((~pl.col(col).is_finite()).fill_null(False).sum()).item())
+            if n_nonfinite:
+                problems.append(f"{col}: {n_nonfinite} non-finite values")
     for col in spec.non_null:
         if col in df.columns and df[col].null_count() > 0:
             problems.append(f"{col}: {df[col].null_count()} nulls")

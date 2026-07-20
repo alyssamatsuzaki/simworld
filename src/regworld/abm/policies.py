@@ -1,5 +1,5 @@
 """Scripted policy schedules (§10 Stage 10a) — the single source of truth for the
-static policy grid, shared by the DGP's Regime-F oracle, the ABM, and the RL baselines."""
+static policy grid, shared by the DGP's Regime-F ground truth, the ABM, and the RL baselines."""
 
 from __future__ import annotations
 
