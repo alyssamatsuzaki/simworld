@@ -1,5 +1,5 @@
-e_low: 0.2
-e_high: 0.8
+e_low: 0.0   # enforcement onset: off
+e_high: 0.6  # Regime P enforcement level - the DiD-commensurable estimand
 n_do_seeds: 64
 on_disagreement: recalibrate
 run_discovery: true
