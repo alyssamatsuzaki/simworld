@@ -65,7 +65,7 @@ STAGE_ORDER: list[tuple[str, list[str]]] = [
 HARD_DEPS: dict[str, list[str]] = {
     "graphs": ["data"],
     "abm": ["data", "graphs"],
-    "tensorized_abm": ["data", "graphs"],
+    "tensorized_abm": ["data", "graphs", "abm"],
     "calibration": ["data", "graphs"],
     "causal": ["data", "calibration"],
     "emulator": ["abm", "calibration"],
