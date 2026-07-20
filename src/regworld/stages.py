@@ -194,7 +194,44 @@ def stage_causal(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_emulator(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 5, Stages 6-7")
+    """Stages 6+7: train the GraphRSSM and certify the EmulatorEnv contract half."""
+    import numpy as np
+
+    from regworld.environments.emulator_env import EmulatorEnv
+    from regworld.training.train_emulator import train_world_model
+
+    result = train_world_model(cfg)
+    tracker.log_metrics(
+        {
+            "emulator_val_total": result.metrics["val_total"],
+            "emulator_val_aggregate": result.metrics["val_aggregate"],
+            "emulator_val_imag_aggregate": result.metrics["val_imag_aggregate"],
+            "emulator_train_seconds": result.metrics["train_seconds"],
+            "emulator_parameters": result.metrics["parameters"],
+        }
+    )
+    env = EmulatorEnv(cfg)
+    observation, _ = env.reset(seed=cfg.seed)
+    env.action_space.seed(cfg.seed)
+    _, reward, terminated, truncated, _ = env.step(env.action_space.sample())
+    contract = Path(cfg.paths.root) / "envs" / "emulator_contract.json"
+    contract.parent.mkdir(parents=True, exist_ok=True)
+    contract.write_text(
+        json.dumps(
+            {
+                "backend": "emulator",
+                "arch": result.arch,
+                "observation_shape": list(observation.shape),
+                "action_shape": list(env.action_space.shape or ()),
+                "reward_finite": bool(np.isfinite(reward)),
+                "terminated": terminated,
+                "truncated": truncated,
+            },
+            indent=2,
+        )
+    )
+    env.close()
+    return [result.checkpoint, result.summary, contract]
 
 
 def stage_envs(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:

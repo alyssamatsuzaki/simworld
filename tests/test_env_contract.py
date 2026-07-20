@@ -207,3 +207,148 @@ def test_real_regulation_model_one_controlled_step(smoke_cfg: RegWorldConfig) ->
     assert env.observation_space.contains(observation)
     assert np.isfinite(reward)
     assert not (terminated and truncated)
+
+
+# --------------------------------------------------------------------------- #
+# Stage 8, Phase 5 half: EmulatorEnv — identical spaces, imagination stepping #
+# --------------------------------------------------------------------------- #
+
+import torch  # noqa: E402
+
+from regworld.environments.emulator_env import EmulatorEnv  # noqa: E402
+from regworld.models.world_model import Decoded, ModelState, WorldModel  # noqa: E402
+from regworld.training.datamodule import aggregate_dim  # noqa: E402
+
+from .test_dynamics_shapes import tiny_template  # noqa: E402
+
+_N_FIRMS, _N_SEGMENTS = 12, 3
+
+
+def _emulator_meta(cfg: RegWorldConfig) -> dict:
+    aggregates = torch.zeros(aggregate_dim(cfg))
+    aggregates[2] = 800.0  # baseline HHI
+    aggregates[3] = 0.55  # baseline trust
+    aggregates[4] = 3.0  # baseline consumer surplus
+    firm = torch.zeros(_N_FIRMS, 4)
+    firm[:, 1] = 1.0
+    firm[:, 2] = 0.35
+    return {
+        "initial": {
+            "firm": firm,
+            "segment": torch.full((_N_SEGMENTS, 1), 0.55),
+            "aggregate": aggregates,
+        },
+        "aggregate_names": [f"a{i}" for i in range(aggregate_dim(cfg))],
+        "extras": {"n_firms": _N_FIRMS},
+    }
+
+
+def _tiny_world_model(cfg: RegWorldConfig, seed: int = 0) -> WorldModel:
+    rng = np.random.default_rng(seed)
+    torch.manual_seed(seed)
+    return WorldModel(
+        arch="rssm_gnn",
+        static_features={
+            "firm": torch.randn(_N_FIRMS, 5),
+            "segment": torch.randn(_N_SEGMENTS, 2),
+            "association": torch.ones(2, 1),
+            "regulator": torch.ones(1, 1),
+        },
+        aggregate_dim=aggregate_dim(cfg),
+        action_dim=4,
+        deter_dim=16,
+        hidden_dim=32,
+        latent_categories=8,
+        latent_classes=8,
+        gnn_layers=2,
+        template=tiny_template(rng),
+    )
+
+
+class _ScriptedWorldModel:
+    """Duck-typed stand-in emitting a fixed aggregate row every step."""
+
+    def __init__(self, cfg: RegWorldConfig, aggregates: np.ndarray) -> None:
+        self.aggregate_dim = aggregate_dim(cfg)
+        self._row = torch.as_tensor(aggregates, dtype=torch.float32).unsqueeze(0)
+
+    def eval(self) -> _ScriptedWorldModel:
+        return self
+
+    def initial_state(self, firm, segment, aggregates, generator=None) -> ModelState:
+        return ModelState(
+            core=torch.zeros(1, 4),
+            node_hidden=None,
+            firm_dynamic=firm,
+            segment_dynamic=segment,
+        )
+
+    def imagine_step(self, state, action, generator=None):
+        decoded = Decoded(
+            aggregates=self._row.clone(),
+            node_probs=torch.full((1, _N_FIRMS), 0.5),
+            reward=torch.zeros(1),
+            continue_prob=torch.ones(1),
+        )
+        return state, decoded
+
+
+def test_emulator_env_checker_and_deterministic_reset(smoke_cfg: RegWorldConfig) -> None:
+    env = EmulatorEnv(smoke_cfg, model=_tiny_world_model(smoke_cfg), meta=_emulator_meta(smoke_cfg))
+    check_env(env, skip_render_check=True)
+    first, _ = env.reset(seed=17)
+    env.step(np.array([0.7, 0.2, 0.4, 0.1], dtype=np.float32))
+    second, _ = env.reset(seed=17)
+    np.testing.assert_array_equal(first, second)
+    # stochastic latents are seeded per reset: same seed, same one-step outcome
+    obs_a = env.step(np.array([0.5, 0.0, 0.4, 0.2], dtype=np.float32))[0]
+    env.reset(seed=17)
+    obs_b = env.step(np.array([0.5, 0.0, 0.4, 0.2], dtype=np.float32))[0]
+    np.testing.assert_array_equal(obs_a, obs_b)
+
+
+def test_space_identity_between_abm_and_emulator(smoke_cfg: RegWorldConfig) -> None:
+    """The identity that makes the planning-utility comparison possible."""
+    abm = AbmEnv(smoke_cfg, model_factory=fake_factory())
+    emulator = EmulatorEnv(
+        smoke_cfg, model=_tiny_world_model(smoke_cfg), meta=_emulator_meta(smoke_cfg)
+    )
+    assert abm.observation_space == emulator.observation_space
+    assert abm.action_space == emulator.action_space
+
+
+def test_emulator_time_limit_is_only_truncation(smoke_cfg: RegWorldConfig) -> None:
+    cfg = smoke_cfg.model_copy(deep=True)
+    cfg.horizon_quarters = 2
+    benign = np.zeros(aggregate_dim(cfg))
+    benign[0] = 0.5  # healthy compliance, no exits
+    env = EmulatorEnv(cfg, model=_ScriptedWorldModel(cfg, benign), meta=_emulator_meta(cfg))
+    env.reset(seed=1)
+    assert env.step(np.zeros(4, np.float32))[2:4] == (False, False)
+    assert env.step(np.zeros(4, np.float32))[2:4] == (False, True)
+
+
+def test_emulator_collapse_is_only_termination(smoke_cfg: RegWorldConfig) -> None:
+    collapsed = np.zeros(aggregate_dim(smoke_cfg))
+    collapsed[5] = 0.5  # > 40% of firms exited: absorbing end, no future value
+    env = EmulatorEnv(
+        smoke_cfg, model=_ScriptedWorldModel(smoke_cfg, collapsed), meta=_emulator_meta(smoke_cfg)
+    )
+    env.reset(seed=1)
+    assert env.step(np.zeros(4, np.float32))[2:4] == (True, False)
+
+
+def test_emulator_reward_flag_switches_source(smoke_cfg: RegWorldConfig) -> None:
+    benign = np.zeros(aggregate_dim(smoke_cfg))
+    benign[0] = 0.6  # compliance up...
+    benign[2], benign[3], benign[4] = 800.0, 0.55, 3.0  # ...everything else at baseline
+    meta = _emulator_meta(smoke_cfg)
+    env = EmulatorEnv(smoke_cfg, model=_ScriptedWorldModel(smoke_cfg, benign), meta=meta)
+    env.reset(seed=1)
+    recomputed = env.step(np.zeros(4, np.float32))[1]
+    assert recomputed > 0.0  # compliance up from a zero baseline
+    cfg_head = smoke_cfg.model_copy(deep=True)
+    cfg_head.emulator.reward_from_outcomes = False
+    env_head = EmulatorEnv(cfg_head, model=_ScriptedWorldModel(cfg_head, benign), meta=meta)
+    env_head.reset(seed=1)
+    assert env_head.step(np.zeros(4, np.float32))[1] == 0.0  # scripted head says 0
