@@ -20,28 +20,33 @@ from scipy.special import expit, logsumexp
 
 @dataclass(frozen=True)
 class Theta:
-    """Behavioral parameters (§7.3). Group A: firm logit; Group B: consumer/market."""
+    """Behavioral parameters (§7.3). Group A: firm logit; Group B: consumer/market.
+
+    Defaults are deliberately ordinary prior-center starting values for the
+    estimated model. The planted answer-key values are bound explicitly inside
+    ``regworld.dgp.world`` and must never be recoverable by calling ``Theta()``.
+    """
 
     # Group A — firm-decision logit (micro-likelihood, Stage 4a)
-    beta_0: float = -1.2
-    beta_enforce: float = 2.5
-    beta_cost: float = 1.8
-    beta_peer: float = 1.4
-    beta_assoc: float = 0.6
-    beta_size: float = 0.25
-    beta_customer: float = 0.9
-    phi_phase: float = 0.6
-    beta_stick: float = 2.0
-    beta_capacity: float = 0.9  # multiplies UNOBSERVED z_i; absent from every fitted model
-    q0: float = 0.05  # false-positive compliance report rate (nuisance, in the data)
-    q1: float = 0.05  # false-negative rate
+    beta_0: float = 0.0
+    beta_enforce: float = 1.0
+    beta_cost: float = 1.0
+    beta_peer: float = 1.0
+    beta_assoc: float = 0.5
+    beta_size: float = 0.0
+    beta_customer: float = 0.5
+    phi_phase: float = 0.5
+    beta_stick: float = 1.0
+    beta_capacity: float = 0.0  # fitted models never observe latent capacity z_i
+    q0: float = 2.0 / 22.0  # Beta(2,20) prior mean; truth is bound only in dgp/
+    q1: float = 2.0 / 22.0
     # Group B — consumer, market, enforcement dynamics (macro SMC-ABC, Stage 4b)
-    gamma_scale: float = 0.45  # economies of scale in compliance cost (the backfire driver)
-    ell_learn: float = 0.30  # learning-by-doing cost reduction
-    alpha_trust: float = 0.30  # consumer trust update rate
-    rho_influence: float = 0.15  # consumer social contagion
-    mu_privacy: float = 0.80  # privacy-driven spend reallocation toward compliers
-    delta_exit: float = 0.25  # exit-hazard scale (small-firm fragility)
+    gamma_scale: float = 0.50
+    ell_learn: float = 1.0 / 3.0
+    alpha_trust: float = 2.0 / 7.0
+    rho_influence: float = 0.20
+    mu_privacy: float = 0.80
+    delta_exit: float = 0.40
 
     def group_a_names(self) -> list[str]:
         return [

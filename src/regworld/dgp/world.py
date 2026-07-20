@@ -12,7 +12,26 @@ import numpy as np
 from regworld.rules import Constants, FirmAttributes, SegmentAttributes, Theta
 from regworld.types import RegWorldConfig
 
-THETA_STAR = Theta()  # §7.3 truth column, encoded as the Theta defaults
+THETA_STAR = Theta(
+    beta_0=-1.2,
+    beta_enforce=2.5,
+    beta_cost=1.8,
+    beta_peer=1.4,
+    beta_assoc=0.6,
+    beta_size=0.25,
+    beta_customer=0.9,
+    phi_phase=0.6,
+    beta_stick=2.0,
+    beta_capacity=0.9,
+    q0=0.05,
+    q1=0.05,
+    gamma_scale=0.45,
+    ell_learn=0.30,
+    alpha_trust=0.30,
+    rho_influence=0.15,
+    mu_privacy=0.80,
+    delta_exit=0.25,
+)
 CONSTANTS = Constants()
 
 # skewed sector distribution (§7.1)

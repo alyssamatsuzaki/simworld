@@ -19,13 +19,15 @@ def test_all_disabled_writes_manifest(smoke_cfg: RegWorldConfig) -> None:
 
 
 def test_recon_stage_runs_and_unbuilt_stages_block(smoke_cfg: RegWorldConfig) -> None:
-    cfg = smoke_cfg.model_copy(update={"stages": StagesCfg(recon=True, abm=True, emulator=True)})
+    cfg = smoke_cfg.model_copy(update={"stages": StagesCfg(recon=True, emulator=True, rl=True)})
     manifest = run_pipeline(cfg, NullTracker())
     stages = manifest["stages"]
     assert isinstance(stages, dict)
     assert stages["recon"]["status"] == "DONE"
     recon_out = json.loads(Path(stages["recon"]["outputs"][0]).read_text())
     assert "versions" in recon_out
-    # abm is not built yet -> BLOCKED; emulator hard-depends on abm -> BLOCKED
-    assert stages["abm"]["status"] == "BLOCKED"
+    # The next unbuilt stage blocks honestly; its enabled dependent does too.
     assert stages["emulator"]["status"] == "BLOCKED"
+    assert "not built" in stages["emulator"]["notes"]
+    assert stages["rl"]["status"] == "BLOCKED"
+    assert "hard dependency" in stages["rl"]["notes"]

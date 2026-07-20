@@ -70,3 +70,10 @@ def test_scripts_only_world_builders_touch_dgp() -> None:
         if DGP_IMPORT.search(p.read_text(encoding="utf-8")):
             offenders.append(p.name)
     assert offenders == [], f"scripts importing regworld.dgp: {offenders}"
+
+
+def test_estimated_theta_defaults_do_not_reveal_answer_key() -> None:
+    from regworld.rules import Theta
+
+    assert Theta().beta_peer != 1.4
+    assert Theta().beta_capacity == 0.0
