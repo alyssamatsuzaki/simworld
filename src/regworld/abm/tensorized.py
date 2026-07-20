@@ -196,6 +196,7 @@ def rollout_tensorized(
     seed: int,
     quarters: int | None = None,
     treatment_start: np.ndarray | None = None,
+    lever_schedule: np.ndarray | None = None,
 ) -> TensorTrajectory:
     """Roll out the observed-world ABM with sparse, differentiable Torch kernels.
 
@@ -203,6 +204,11 @@ def rollout_tensorized(
     Python floats are promoted on the configured device. The forward pass uses
     hard state transitions, while straight-through estimators retain gradients of
     compliance and exit probabilities.
+
+    ``lever_schedule`` (quarters, 4) overrides the static ``policy`` with
+    per-quarter ``(enforcement, targeting, phase_speed, subsidy)`` rows — the
+    same semantics as stepping :class:`AbmEnv` with a fresh action each quarter.
+    ``None`` keeps the static levers and the exact original computation.
     """
     device = torch.device(cfg.resolve_device())
     dtype = torch.float32
@@ -250,13 +256,20 @@ def rollout_tensorized(
     targeting = lever("targeting")
     phase_speed = lever("phase_speed")
     subsidy = lever("subsidy")
+    schedule_tensor: torch.Tensor | None = None
+    if lever_schedule is not None:
+        schedule_tensor = _as_tensor(lever_schedule, device=device, dtype=dtype)
+        if schedule_tensor.shape != (n_quarters, 4):
+            raise ValueError("lever_schedule must have shape (quarters, 4)")
 
     outcomes: list[TensorQuarterOutcome] = []
     covariates: list[dict[str, torch.Tensor]] = []
     probabilities: list[torch.Tensor] = []
     n_associations = max(int(association.max().item()) + 1, 0)
     n_sectors = state.publicity.numel()
-    for _ in range(n_quarters):
+    for step_index in range(n_quarters):
+        if schedule_tensor is not None:
+            enforcement, targeting, phase_speed, subsidy = schedule_tensor[step_index]
         phase_length = 12.0 - 10.0 * phase_speed
         time_since_start = state.quarter - treatment_start_tensor + 1.0
         phi = torch.where(

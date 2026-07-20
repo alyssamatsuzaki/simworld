@@ -35,6 +35,8 @@ causal:          ## Stage 5
 	$(RUN) python scripts/causal_analysis.py profile=$(PROFILE) && $(RUN) python scripts/validate_simulator.py profile=$(PROFILE)
 emulator:        ## Stages 6-7
 	$(RUN) python scripts/train_emulator.py profile=$(PROFILE)
+eval-emulator:   ## Stage 6-7 §11 evaluation suite
+	$(RUN) python scripts/eval_emulator.py profile=$(PROFILE)
 rl:              ## Stage 10
 	$(RUN) python scripts/train_rl.py profile=$(PROFILE)
 ensemble:        ## Stage 11
@@ -69,6 +71,6 @@ docker-run:
 clean:
 	rm -rf experiments/* artifacts/* reports/figures/* .pytest_cache .mypy_cache
 
-.PHONY: help setup lock lint typecheck test test-slow data graphs abm calibrate causal emulator \
+.PHONY: help setup lock lint typecheck test test-slow data graphs abm calibrate causal emulator eval-emulator \
         rl ensemble sensitivity figures report all smoke paper sweep slurm dashboard \
         docker-build docker-run clean
