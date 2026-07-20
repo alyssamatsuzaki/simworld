@@ -66,7 +66,7 @@ HARD_DEPS: dict[str, list[str]] = {
     "graphs": ["data"],
     "abm": ["data", "graphs"],
     "tensorized_abm": ["data", "graphs", "abm"],
-    "calibration": ["data", "graphs"],
+    "calibration": ["data", "graphs", "abm", "tensorized_abm"],
     "causal": ["data", "calibration"],
     "emulator": ["abm", "calibration"],
     "envs": ["abm"],

@@ -144,7 +144,21 @@ def stage_tensorized_abm(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_calibration(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 4, Stage 4")
+    """Stage 4: launch JAX inference out of process and register its artifacts."""
+    _run_script(cfg, "calibrate.py")
+    output_dir = Path(cfg.paths.root) / "calibration"
+    manifest_path = output_dir / "calibration_manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    diagnostics = json.loads((output_dir / "micro_diagnostics.json").read_text())
+    tracker.log_metrics(
+        {
+            "calibration_divergences": float(diagnostics["divergences"]),
+            "calibration_max_rhat": float(diagnostics["max_r_hat"]),
+            "calibration_min_ess_bulk": float(diagnostics["min_ess_bulk"]),
+            "calibration_parameters": float(manifest["fitted_parameter_count"]),
+        }
+    )
+    return [manifest_path, *[Path(path) for path in manifest["outputs"]]]
 
 
 def stage_causal(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:

@@ -9,6 +9,7 @@ from scipy import sparse
 
 from regworld.data.generate import _baseline_outcome, _copy_state
 from regworld.dgp import dynamics
+from regworld.dgp.history import draw_rollout
 from regworld.rules import (
     Constants,
     FirmAttributes,
@@ -104,6 +105,15 @@ def test_wellspecified_world_omits_only_the_latent_capacity_term(monkeypatch: An
         )
 
     assert observed_flags == [False, True]
+
+
+def test_staggered_rollout_retains_not_yet_treated_controls(
+    smoke_cfg: RegWorldConfig,
+) -> None:
+    rollout = draw_rollout(smoke_cfg, np.random.default_rng(smoke_cfg.seed + 90_001))
+    assert rollout.min() >= 2
+    assert rollout.max() >= smoke_cfg.observed_quarters
+    assert np.unique(rollout).size == smoke_cfg.population.n_regions
 
 
 def test_reward_penalizes_future_exits_not_historical_baseline_exits() -> None:

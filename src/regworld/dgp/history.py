@@ -16,17 +16,24 @@ from regworld.types import RegWorldConfig
 # The past regime's levers: the status-quo policy (§10 Stage 10a).
 REGIME_P_LEVERS = PolicyLevers(enforcement=0.6, targeting=0.5, phase_speed=0.3, subsidy=0.3)
 
-# Rollout quarters are drawn from this window (0-based): at least 2 pre-treatment
-# quarters for every region and onset inside the q1-12 observation window.
+# Rollout quarters are assigned on a randomized, balanced grid (0-based). Every
+# region has at least two pre-treatment quarters and at least one cohort remains
+# not-yet-treated throughout the observed window. The latter is required for a
+# staggered-adoption estimator to retain a credible control group at late dates.
 ROLLOUT_EARLIEST = 2
-ROLLOUT_LATEST = 9
 
 NEVER_TREATED = 10_000  # t_start sentinel: enforcement never arrives
 
 
 def draw_rollout(cfg: RegWorldConfig, rng: np.random.Generator) -> np.ndarray:
-    """t_r per region, uniform on the rollout window, independent of everything."""
-    return rng.integers(ROLLOUT_EARLIEST, ROLLOUT_LATEST + 1, size=cfg.population.n_regions)
+    """Randomly assign regions to a balanced onset grid, independently of firms."""
+    latest = min(cfg.horizon_quarters - 2, cfg.observed_quarters + 2)
+    if latest <= ROLLOUT_EARLIEST:
+        raise ValueError("history needs room for pre-treatment and not-yet-treated cohorts")
+    onset_grid = np.rint(np.linspace(ROLLOUT_EARLIEST, latest, cfg.population.n_regions)).astype(
+        np.int64
+    )
+    return onset_grid[rng.permutation(cfg.population.n_regions)]
 
 
 def run_history(

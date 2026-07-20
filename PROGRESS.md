@@ -1,6 +1,6 @@
 # PROGRESS
 
-Run started: 2026-07-19   Agent session: 2   Git HEAD: Phase 2 gate (see latest git log)
+Run started: 2026-07-19   Agent session: 3   Git HEAD: Stage 4 calibration (see latest git log)
 
 ## Phase status
 - [x] 1 Foundation (gate green; CI runs on push)
@@ -15,11 +15,11 @@ Run started: 2026-07-19   Agent session: 2   Git HEAD: Phase 2 gate (see latest 
 | Stage | Status (DONE/SKIPPED/DEGRADED/FAILED/BLOCKED) | Gate | Notes |
 |---|---|---|---|
 | 0 recon | DONE | GATE-0-OK | uv 0.11.29, py3.12, all extras resolved; see DEVIATIONS |
-| 1 data | DONE | GATE-1-OK | Raw §8 observations, observed-only analysis hats, deterministic Parquet, DuckDB views; 18 focused tests pass |
+| 1 data | DONE | GATE-1-OK | Raw §8 observations, observed-only analysis hats, deterministic Parquet, DuckDB views; rollout grid retains not-yet-treated DiD controls |
 | 2 graphs | DONE | GATE-2-OK | Complete-demand NetworkX graph pair, metrics, PyG static/dynamic feature contract; 9 focused tests pass |
 | 3 abm | DONE | GATE-3-OK | Mesa 3.5 AgentSet model, observed-only fresh forecast world, deterministic DataCollector outputs; 10 contract tests pass |
 | 3b tensorized | DONE | 32-seed KS p > 0.05 | Pure-PyTorch sparse differentiable ABM; shapes, gradients, determinism, and Mesa agreement pass |
-| 4 calibration | | | |
+| 4 calibration | DONE | GATE-4-OK (make calibrate exit 0) | User-authorized third `make calibrate PROFILE=smoke` succeeded in 43s: 17 fitted quantities, NumPyro micro NUTS in isolated subprocess, PyMC crosscheck, macro SMC-ABC surrogate, ArviZ energy/pair/predictive diagnostics all written. 8 focused tests green + new `test_micro_diagnostics_runs_full_arviz_and_energy_path` covering the two prior failure sites. lint + typecheck clean. PyMC rhat/ess warnings expected at smoke draws. |
 | 5 causal | | | |
 | 6+7 emulator | | | |
 | 8 envs | DONE (ABM half) | GATE-8-OK | Gymnasium AbmEnv check_env, deterministic reset, and terminated/truncated semantics; EmulatorEnv lands in Phase 5 |
@@ -39,8 +39,13 @@ mandatory market coverage, exact registry/market relations, fresh Regime-F episo
 and total-regulation-onset estimand.
 
 ## Blocked / needs human
-(empty if clean)
+Nothing blocked. Stage 4's calibration gate is green (the twice-failed integration points
+are fixed and regression-tested). Phase 4's phase gate also requires Stage 5's
+`test_causal_recovers_known_effect.py`, which is the next thing to build.
 
 ## Next action
-Phase 4, Stage 4: NumPyro micro calibration + macro SMC-ABC + PyMC/ArviZ checks,
-then Stage 5 causal identification and the four-number simulator gate.
+Build Stage 5 (causal): `regworld/causal/` — DoWhy identify→estimate→refute, EconML CATE,
+staggered DiD, `ground_truth.py` do() effects already sealed by Stage 1, and the §10 Stage-5f
+four-number simulator gate (writes `reports/simulator_discrepancy.md` only if it FLAGS).
+Phase 4 gate: `uv run pytest -m slow tests/test_parameter_recovery.py tests/test_causal_recovers_known_effect.py -q`.
+Commit: `feat(causal): DoWhy identify→estimate→refute, EconML CATE, staggered DiD, do() ground truth, four-number gate`.

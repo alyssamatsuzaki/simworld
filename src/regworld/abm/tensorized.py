@@ -195,6 +195,7 @@ def rollout_tensorized(
     policy: PolicyLevers,
     seed: int,
     quarters: int | None = None,
+    treatment_start: np.ndarray | None = None,
 ) -> TensorTrajectory:
     """Roll out the observed-world ABM with sparse, differentiable Torch kernels.
 
@@ -220,6 +221,12 @@ def rollout_tensorized(
     supply = scipy_to_torch_sparse(graphs.supply_und, device=device, dtype=dtype)
     influence = scipy_to_torch_sparse(graphs.influence, device=device, dtype=dtype)
     market_mask = torch.as_tensor(graphs.market_mask, device=device, dtype=torch.bool)
+    if treatment_start is None:
+        treatment_start_tensor = torch.zeros(firms.n, device=device, dtype=dtype)
+    else:
+        if np.asarray(treatment_start).shape != (firms.n,):
+            raise ValueError("treatment_start must have one zero-based onset per firm")
+        treatment_start_tensor = _as_tensor(treatment_start, device=device, dtype=dtype)
 
     size = _as_tensor(firms.size, device=device, dtype=dtype)
     sector = torch.as_tensor(firms.sector, device=device, dtype=torch.long)
@@ -251,19 +258,24 @@ def rollout_tensorized(
     n_sectors = state.publicity.numel()
     for _ in range(n_quarters):
         phase_length = 12.0 - 10.0 * phase_speed
-        phi_scalar = torch.clamp(
-            _as_tensor(state.quarter + 1, device=device, dtype=dtype) / phase_length,
-            min=0.0,
-            max=1.0,
+        time_since_start = state.quarter - treatment_start_tensor + 1.0
+        phi = torch.where(
+            time_since_start > 0,
+            torch.clamp(
+                time_since_start / phase_length,
+                min=0.0,
+                max=1.0,
+            ),
+            torch.zeros_like(time_since_start),
         )
-        phi = phi_scalar.expand_as(size)
+        active = (treatment_start_tensor <= state.quarter).to(dtype)
 
         tau = torch.abs(targeting)
         large_target = size.pow(constants.target_gamma)
         small_target = torch.clamp(size, min=1e-9).reciprocal().pow(constants.target_gamma)
         size_target = torch.where(targeting >= 0, large_target, small_target)
         audit_weight = (1.0 - tau) + tau * size_target * (1.0 - state.y)
-        audit_weight = audit_weight * state.alive
+        audit_weight = audit_weight * state.alive * active
         audit_total = audit_weight.sum()
         expected_audits = enforcement * constants.audit_budget * size.numel()
         alpha = torch.where(
