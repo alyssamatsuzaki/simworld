@@ -162,7 +162,35 @@ def stage_calibration(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_causal(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 4, Stage 5")
+    """Stage 5: causal estimates, refutation, discovery, and the four-number gate."""
+    from regworld.causal.gate import run_gate, write_gate_outputs
+    from regworld.pipeline import Degraded
+
+    _run_script(cfg, "causal_analysis.py")
+    estimates_path = Path(cfg.paths.root) / "causal" / "causal_estimates.json"
+    estimates = json.loads(estimates_path.read_text())
+    result = run_gate(cfg)
+    gate_paths = write_gate_outputs(cfg, result)
+    tracker.log_metrics(
+        {
+            "causal_tau_true": result.tau_true,
+            "causal_tau_abm": result.tau_abm,
+            "causal_tau_qe": result.tau_qe,
+            "causal_tau_obs": result.tau_obs,
+            "causal_gate_flagged": float(result.flagged),
+            "causal_did_placebo": float(estimates["refutation"]["placebo_effect"]),
+        }
+    )
+    paths = [estimates_path, *gate_paths]
+    if result.flagged:
+        # §10 5f on_disagreement: surface the discrepancy loudly; the recalibration
+        # pass is a driver-level decision, not something to hide inside this stage.
+        raise Degraded(
+            f"simulator gate FLAGGED (see {gate_paths[-1]}); "
+            f"causal.on_disagreement={cfg.causal.on_disagreement}",
+            outputs=[str(p) for p in paths],
+        )
+    return paths
 
 
 def stage_emulator(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:

@@ -207,12 +207,15 @@ def _do_interventions(
 ) -> tuple[Path, Path]:
     """§7.10: true total-regulation-onset ATT (paired counterfactual runs) and the
     analytic per-firm audit CATE along the observed trajectory."""
+    from regworld.causal.did import group_time_att
+
     n_do = max(2, min(cfg.causal.n_do_seeds, 16 if cfg.profile_name == "smoke" else 64))
     horizon = cfg.horizon_quarters
     obs_q = cfg.observed_quarters
     per_quarter = np.zeros((n_do, obs_q))
     att_cells = np.zeros(n_do)
     terminal = np.zeros(n_do)
+    did_truth = np.zeros(n_do)
     for k in range(n_do):
         seed = cfg.seed + 60_000 + k
         traj_t, ts = dgp_history.run_history(
@@ -244,6 +247,24 @@ def _do_interventions(
                 cells.append(diff[t, post].mean())
         att_cells[k] = float(np.mean(cells)) if cells else 0.0
         terminal[k] = diff[horizon - 1].mean()
+        # The DiD-commensurable estimand: the same clean-comparison group-time
+        # estimator Stage 5 runs, applied to the TRUE panel of this rollout run.
+        # Under cross-region interference (peer + macro spillovers reach the
+        # not-yet-treated controls) this deliberately differs from the
+        # nobody-ever-treated ATT above; Stage 5 grades the DiD against THIS.
+        cohort_1b = np.where(
+            ts >= dgp_history.NEVER_TREATED, -1, ts + 1
+        )  # panel convention: treatment_quarter = t_start + 1, -1 = never
+        rows_y, rows_q, rows_g = [], [], []
+        for q in range(1, obs_q):
+            covs_q = traj_t.covariates[q - 1]
+            alive_q = covs_q["alive"] > 0.5
+            rows_y.append(y_t[q - 1][alive_q])
+            rows_q.append(np.full(int(alive_q.sum()), q, dtype=np.int64))
+            rows_g.append(cohort_1b[alive_q])
+        did_truth[k], _, _ = group_time_att(
+            np.concatenate(rows_y), np.concatenate(rows_q), np.concatenate(rows_g)
+        )
     # analytic audit CATE along the observed trajectory (quarters with enforcement on)
     boost = CONSTANTS.own_audit_boost
     cates = np.zeros(firms.n)
@@ -295,6 +316,14 @@ def _do_interventions(
             else 0.0
             for k in (0, 1, 2)
         ],
+        "tau_did_truth": float(did_truth.mean()),
+        "tau_did_truth_se": float(did_truth.std(ddof=1) / np.sqrt(n_do)),
+        "tau_interference_gap": float(att_cells.mean() - did_truth.mean()),
+        "did_truth_estimand": (
+            "group_time_att (not-yet-treated controls) on the true panel of the "
+            "as-scheduled rollout; differs from tau_true_onset_att because peer and "
+            "macro-trust spillovers reach the controls (cross-region interference)"
+        ),
         "n_do_seeds": n_do,
         "estimand": "total_regulation_onset_att",
         "regulation_off_enforcement": 0.0,
@@ -382,6 +411,24 @@ def generate_ground_truth(cfg: RegWorldConfig) -> GenerationResult:
     )
     p1, p2 = _do_interventions(cfg, firms, segments, g_true, rollout, traj, t_start)
     sealed_paths += [p1, p2]
+    # The planted confounder and true continuous size/cost, sealed for Stage-5
+    # grading only (conditioning on z is the "full" control set that closes the
+    # backdoor the observed decile leaves open). Never joined into observed data.
+    sealed_paths.append(
+        store.write_oracle_parquet(
+            cfg,
+            "firm_confounders",
+            pl.DataFrame(
+                {
+                    "firm_id": np.arange(firms.n, dtype=np.int64),
+                    "capacity_z": firms.z.astype(np.float64),
+                    "size": firms.size.astype(np.float64),
+                    "cost_coef": firms.cost_coef.astype(np.float64),
+                    "size_tercile": firms.size_tercile.astype(np.int64),
+                }
+            ),
+        )
+    )
     log.info(
         "generation complete: %d observed, %d oracle artifacts",
         len(observed_paths),
