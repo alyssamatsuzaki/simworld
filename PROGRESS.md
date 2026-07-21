@@ -55,8 +55,30 @@ Remaining before a v0.1.0 tag (none block the smoke gate):
 - Dev/full-profile run: only profile=smoke has been exercised end to end. `make all`
   (profile=dev) and the paper/full profile on a cluster have not been run; the coverage
   >= 0.85 ensemble gate and the dev-profile claim verdicts (C1/C3/C6 are INCONCLUSIVE at
-  smoke by design) are still open.
-- The Phase 7 `docker build` gate step needs a Docker daemon (CI exercises it, not this
-  machine).
+  smoke by design) are still open. **Deliberately deferred 2026-07-21**: this machine
+  had swap at 94% and load 5.9/8 before the run would even start (8 CPU, ~8.6GB RAM, no
+  GPU); profile=dev scales population/emulator/RL/ensemble/sensitivity 10-125x over
+  smoke (e.g. emulator train_steps 300->30000), so it's a multi-hour, single-core-bound
+  job with real OOM risk on this box. User chose to hold off until memory is freed
+  rather than risk it. Resume with `make all` (or `python scripts/run_pipeline.py
+  profile=dev`) once the user gives the go-ahead; watch for OOM and for the same class
+  of checkpoint-shape bugs the smoke run surfaced (fixed so far: EmulatorEnv n_firms
+  backfill).
+- The Phase 7 `docker build` gate step needs Docker, which is not installed on this
+  machine at all. **Attempted 2026-07-21**: `brew install --cask docker` downloads and
+  installs the app but fails at a `sudo ln` step for a helper binary — needs an
+  interactive password prompt Claude cannot supply. User needs to either run `brew
+  install --cask docker` themselves in a real terminal (to enter the password when
+  prompted) or install Docker Desktop directly from docker.com, then Claude can build +
+  run the container gate. CI already builds/runs the image on every push, so this only
+  blocks a *local* verification, not correctness.
+- **OOD banner verified by hand 2026-07-21** (the Definition-of-Done item that says this
+  is "the only test that matters to the client"): started `streamlit run
+  scripts/dashboard.py` locally, drove the sliders with real click+keyboard interaction
+  (not just DOM value-setting, which silently doesn't trigger Streamlit's backend), and
+  confirmed the banner is genuinely reactive both ways — enforcement=1.0/targeting=1.0
+  -> red "OUT OF DISTRIBUTION: Mahalanobis distance 3.16 exceeds..."; back to
+  enforcement=0.5/targeting=-0.5 -> green "In distribution: ... distance 2.02". Confirms
+  `ood_mahalanobis` and the dashboard wiring are both correct.
 - Stage 12 (Hydra) and 13 (tracking) were threaded through Phase 1 and are functioning;
   they have no dedicated stage rows here beyond that.
