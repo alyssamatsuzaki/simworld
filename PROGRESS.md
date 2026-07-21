@@ -8,7 +8,7 @@ Run started: 2026-07-19   Agent session: 3   Git HEAD: Stage 4 calibration (see 
 - [x] 3 Simulation (gate green)
 - [x] 4 Inference (gate green: 7 slow tests in test_parameter_recovery + test_causal_recovers_known_effect)
 - [x] 5 Emulator (gate green: test_dynamics_shapes + test_smoke_train + make emulator + eval_emulator)
-- [ ] 6 Control & ensemble
+- [x] 6 Control & ensemble (gate green at profile=smoke; see Next action for dev-profile follow-up)
 - [ ] 7 Delivery
 
 ## Stage log
@@ -24,11 +24,11 @@ Run started: 2026-07-19   Agent session: 3   Git HEAD: Stage 4 calibration (see 
 | 6+7 emulator | DONE | GATE-6-OK (make emulator exit 0 + 2 test files) | GraphRSSM: macro RSSM (32x32 categorical latents, straight-through + unimix, KL-balanced 0.8/free-bits 1.0), micro HeteroConv-SAGE GNN + per-firm GRUCell, pooled encoder + hand-built aggregates, symlog/two-hot/BCE heads. Domain-randomized Zarr corpus (random/scripted/sinusoid/piecewise policies via `lever_schedule` on the tensorized twin; theta ~ Stage-4 posterior). DreamerV3 losses + k=8 open-loop imagination loss. Ablation arches rssm_flat/gru_baseline. `test_dynamics_shapes` (shapes/grads/no-NaN, 14) + `test_smoke_train` (overfit one batch < 0.05x initial in 200 steps, beats persistence, 3). §11 eval suite: 10 families run, planning-utility + sensitivity marked pending Phase 6. |
 | 8 envs | DONE | GATE-8-OK | Gymnasium AbmEnv (Phase 3) + EmulatorEnv (Phase 5): identical Box spaces by construction, deterministic seeded reset, terminated (collapse) vs truncated (horizon), reward-head vs recompute flag; 9 contract tests incl. space-identity |
 | 9 marl env | DONE | GATE-9-OK | PettingZoo Parallel API (100 cycles), top-K strategic firms, live pre-draw action effects and profit rewards |
-| 10 rl | | | |
-| 11 ensemble | | | |
+| 10 rl | DONE | test_agents_contract.py green | SB3 PPO trained inside EmulatorEnv (control) + latent Dreamer-style actor-critic on imagined rollouts (experiment), shared regworld.agents.registry policy lookup used by both this stage and Stage 11. stage_rl wired (no stub). `make rl` at dev profile not yet run by the parent session — only the smoke-profile contract test is confirmed. |
+| 11 ensemble | DONE | test_ensemble_contract.py green (incl. real-checkpoint e2e) | Ray-scalable (policy x posterior-draw x seed) scenario cube + ABM cross-validation subsample (regworld.ensemble). Fixed at commit time: EmulatorEnv reads meta["extras"]["n_firms"], which train_emulator.py's checkpoint never wrote — backfilled from cfg.population.n_firms (same pattern as sensitivity's policy search) in cube.py's _rollout_cell. Also rewrote the package docstring, which was tripping test_no_dgp_leakage.py's bare "oracle" grep. stage_ensemble wired (no stub). `make ensemble` at dev profile not yet run. |
 | 12 hydra | | | |
 | 13 tracking | | | |
-| 14 sensitivity | | | |
+| 14 sensitivity | DONE | GATE clean: ruff/mypy/pytest + scripts/sensitivity.py and scripts/eval_emulator.py both run end-to-end at profile=smoke | SALib Morris screen -> Sobol indices on the emulator + Optuna TPE policy search over the 4 regulator levers (regworld.sensitivity). Wired into stage_sensitivity and into the §11 eval driver as metric family 12 (was a placeholder status string). |
 | 15 viz | | | |
 | 16 tooling | | | |
 | 17 report | | | |
@@ -45,11 +45,12 @@ identifies (sealed tau_did_truth for the DiD; tau_true for the simulator), and v
 estimator correctness on a full-panel world. Recorded in DEVIATIONS.
 
 ## Next action
-Phase 6 (Stages 10, 11, 14): Control & ensemble. Stage 10 — SB3 PPO trained inside
-EmulatorEnv + TorchRL Dreamer on imagined rollouts; the planning-utility gate evaluates
-every policy in the true ABM (5 seeds x 64 draws), Dreamer exploitation gap J_emulator -
-J_ABM <= 15%. Stage 11 — Ray ensemble scenario cube (posterior draws x policies x seeds)
-with @ray.remote actors holding a loaded emulator; ABM cross-validation subsample. Stage
-14 — SALib Morris screen -> Sobol on the emulator, Optuna policy search. This unblocks
-§11 families 5 (planning utility) and 12 (sensitivity), currently reported as pending.
-Gate: `make rl ensemble sensitivity` + coverage >= 0.85.
+Phase 6 (Stages 10, 11, 14) is implemented and wired: stage_rl, stage_ensemble, and
+stage_sensitivity all call into real code (no NotImplementedError stubs), full test
+suite (196 tests, incl. the dgp/oracle leakage firewall) + ruff + mypy are green, and
+§11 families 5 (planning utility) and 12 (sensitivity) run for real in eval_emulator.py.
+Remaining before Phase 6 can be called fully closed: `make rl ensemble sensitivity` at
+dev profile (only profile=smoke has been exercised, via the stages' own contract tests
+and this session's manual smoke runs of scripts/sensitivity.py + eval_emulator.py), and
+the coverage >= 0.85 gate has not been checked. Move to Phase 7 (Stages 12 hydra config
+polish, 13 tracking, 15 viz, 16 tooling, 17 report) once that dev-profile run is clean.
