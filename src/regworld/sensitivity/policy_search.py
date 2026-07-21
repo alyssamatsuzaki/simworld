@@ -28,10 +28,6 @@ def run_policy_search(cfg: RegWorldConfig) -> dict[str, object]:
     log.info("Starting Optuna policy search (%d trials)", cfg.sensitivity.optuna_trials)
 
     model, meta = load_checkpoint(checkpoint_path(cfg.paths.root, cfg.emulator.arch))
-    if "extras" not in meta:
-        meta["extras"] = {}
-    if "n_firms" not in meta["extras"]:
-        meta["extras"]["n_firms"] = cfg.population.n_firms
     env = EmulatorEnv(cfg, model=model, meta=meta)
 
     def objective(trial: optuna.Trial) -> float:

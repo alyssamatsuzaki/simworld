@@ -11,6 +11,7 @@ reward modelling.
 
 from __future__ import annotations
 
+import logging
 from typing import Any, cast
 
 import gymnasium as gym
@@ -25,11 +26,36 @@ from regworld.types import RegWorldConfig
 
 from .wrappers import flat_observation_space, regulator_action_space
 
+log = logging.getLogger(__name__)
+
 _HHI_INDEX = 2
 _CS_INDEX = 4
 _EXIT_INDEX = 5
 _AUDIT_INDEX = 6
 _PENALTY_INDEX = 7
+
+
+def _resolve_n_firms(cfg: RegWorldConfig, meta: dict[str, Any]) -> int:
+    """Firm count for the loaded checkpoint.
+
+    ``train_emulator.py`` has historically written checkpoint ``extras`` without
+    ``n_firms``. Rather than KeyError, fall back to the checkpoint's own initial
+    firm frame (authoritative for this model), then to the config population.
+    """
+    extras = meta.get("extras", {})
+    if "n_firms" in extras:
+        return int(extras["n_firms"])
+    initial_firm = meta.get("initial", {}).get("firm")
+    if initial_firm is not None:
+        n = int(initial_firm.shape[0])
+        log.warning("checkpoint extras missing 'n_firms'; using initial firm frame (%d)", n)
+        return n
+    log.warning(
+        "checkpoint extras missing 'n_firms' and no initial firm frame; "
+        "falling back to cfg.population.n_firms (%d)",
+        cfg.population.n_firms,
+    )
+    return int(cfg.population.n_firms)
 
 
 def _clip_aggregates(agg: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -68,7 +94,7 @@ class EmulatorEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
             )
         self.model = model.eval()
         self.meta = meta
-        self._n_firms = int(meta["extras"]["n_firms"])
+        self._n_firms = _resolve_n_firms(cfg, meta)
         self._initial = {k: v.float() for k, v in meta["initial"].items()}
         self._generator = torch.Generator()
         self._state: ModelState | None = None
@@ -77,6 +103,11 @@ class EmulatorEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
         self._elapsed = 0
         self._cumulative_audits = 0.0
         self._last_action = np.zeros(4, dtype=np.float32)
+
+    @property
+    def n_firms(self) -> int:
+        """Firm count resolved for the loaded checkpoint (backfilled if absent)."""
+        return self._n_firms
 
     # ------------------------------------------------------------ observation
     def _observation(self) -> NDArray[np.float32]:

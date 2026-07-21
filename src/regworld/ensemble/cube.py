@@ -131,10 +131,6 @@ def _rollout_cell(
     seed: int,
 ) -> dict[str, Any]:
     """Roll one scenario-cube cell to horizon under a policy; return its terminal row."""
-    if "extras" not in meta:
-        meta["extras"] = {}
-    if "n_firms" not in meta["extras"]:
-        meta["extras"]["n_firms"] = cfg.population.n_firms
     env = EmulatorEnv(cfg, model=model, meta=meta)
     obs, _ = env.reset(seed=seed)
     total_reward = 0.0
@@ -146,7 +142,7 @@ def _rollout_cell(
         total_reward += float(reward)
         quarters += 1
 
-    n_firms = int(meta["extras"]["n_firms"])
+    n_firms = env.n_firms
     # EmulatorEnv's Gym API only exposes a policy-learning observation, not the
     # raw natural-unit aggregate row; its ``_aggregates`` instance attribute
     # (set every step()) is the terminal state we actually need here.
