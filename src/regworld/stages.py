@@ -295,15 +295,36 @@ def stage_marl(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_rl(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 6, Stage 10")
+    """Stage 10: SB3 PPO + latent Dreamer-style actor-critic against the emulator."""
+    from regworld.agents import train_rl
+
+    result = train_rl(cfg)
+    tracker.log_metrics(result.metrics)
+    return [*result.checkpoints, result.summary]
 
 
 def stage_ensemble(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 6, Stage 11")
+    """Stage 11: Ray-scalable scenario cube + ABM cross-validation."""
+    from regworld.ensemble import run_ensemble
+
+    result = run_ensemble(cfg)
+    tracker.log_metrics(result.metrics)
+    return [result.cube, result.summary]
 
 
 def stage_sensitivity(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 6, Stage 14")
+    """Stage 14: SALib Morris -> Sobol sensitivity on the emulator + Optuna policy search."""
+    from regworld.sensitivity.policy_search import run_policy_search, save_optuna_best
+    from regworld.sensitivity.screen import run_sensitivity
+
+    result = run_sensitivity(cfg)
+    tracker.log_metrics(result.metrics)
+
+    optuna_result = run_policy_search(cfg)
+    optuna_path = save_optuna_best(cfg, optuna_result)
+    tracker.log_metrics({"sensitivity_optuna_best_J": float(optuna_result["best_J"])})  # type: ignore[arg-type]
+
+    return [result.indices, result.summary, optuna_path]
 
 
 def stage_figures(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:

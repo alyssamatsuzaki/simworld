@@ -1,9 +1,7 @@
 """§11 driver: run every metric family, write reports/eval/{report.md, metrics.json, figures/}.
 
-Families that cannot run yet (planning utility before Phase 6, sensitivity
-before Stage 14) report their status honestly. Any family that CRASHES is
-recorded with its traceback and the script exits nonzero — a broken grader
-must not look like a passing one.
+Any family that CRASHES is recorded with its traceback and the script exits
+nonzero — a broken grader must not look like a passing one.
 """
 
 from __future__ import annotations
@@ -167,6 +165,7 @@ def main(cfg: DictConfig) -> None:
         parameter_recovery,
         planning_utility,
         predictive,
+        sensitivity,
     )
 
     ctx = harness.load_context(cfg_obj)
@@ -185,10 +184,7 @@ def main(cfg: DictConfig) -> None:
         ("ood", lambda: ood.evaluate(ctx)),
         ("backtest", lambda: backtest.evaluate(ctx)),
         ("ablations", lambda: ablations.evaluate(cfg_obj)),
-        (
-            "sensitivity",
-            lambda: {"status": "Stage 14 (Phase 6): Morris/Sobol run on this emulator"},
-        ),
+        ("sensitivity", lambda: sensitivity.evaluate(cfg_obj)),
     ]
     for name, run in families:
         try:
