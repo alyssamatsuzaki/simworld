@@ -9,7 +9,7 @@ Run started: 2026-07-19   Agent session: 3   Git HEAD: Stage 4 calibration (see 
 - [x] 4 Inference (gate green: 7 slow tests in test_parameter_recovery + test_causal_recovers_known_effect)
 - [x] 5 Emulator (gate green: test_dynamics_shapes + test_smoke_train + make emulator + eval_emulator)
 - [x] 6 Control & ensemble (gate green at profile=smoke; see Next action for dev-profile follow-up)
-- [ ] 7 Delivery
+- [x] 7 Delivery (gate green at profile=smoke: full 17-stage pipeline DONE/CACHED, 13/13 figures, FINDINGS.md)
 
 ## Stage log
 | Stage | Status (DONE/SKIPPED/DEGRADED/FAILED/BLOCKED) | Gate | Notes |
@@ -29,9 +29,9 @@ Run started: 2026-07-19   Agent session: 3   Git HEAD: Stage 4 calibration (see 
 | 12 hydra | | | |
 | 13 tracking | | | |
 | 14 sensitivity | DONE | GATE clean: ruff/mypy/pytest + scripts/sensitivity.py and scripts/eval_emulator.py both run end-to-end at profile=smoke | SALib Morris screen -> Sobol indices on the emulator + Optuna TPE policy search over the 4 regulator levers (regworld.sensitivity). Wired into stage_sensitivity and into the §11 eval driver as metric family 12 (was a placeholder status string). |
-| 15 viz | | | |
-| 16 tooling | | | |
-| 17 report | | | |
+| 15 viz | DONE | 13/13 figures written by full smoke pipeline; test_visualization_contract green | regworld.visualization: figures.py (13 paper figures, graceful per-figure skip), interactive.py (Plotly fans/latent-PCA/network diffusion), dashboard.py (Streamlit, 4 real levers, Mahalanobis OOD banner — the client-critical check, unit-tested). Wired into stage_figures. Deviations: 4-lever dashboard (no fifth "fine scale" lever exists in the action space) and per-quarter fan rebuilt by re-running EmulatorEnv (cube stores terminal-only) — both in DEVIATIONS.md. |
+| 16 tooling | DONE | pre-existing from Phase 1 setup; verified coherent | docker/{Dockerfile,Dockerfile.cuda,compose.yaml}, .github/workflows/{ci,docker,nightly}.yml, slurm/submit.sbatch. CI runs lint→typecheck→test→smoke and uploads FINDINGS.md + figures; docker.yml pushes to GHCR on tags; nightly runs slow tests + dev profile. `docker build` gate not run locally (needs a Docker daemon) — exercised in CI. |
+| 17 report | DONE | build_report.py runs end-to-end at smoke; test_report_contract green (required-heading enforced) | regworld.evaluation.report.build_findings assembles reports/FINDINGS.md: disclaimer-first, four-number table, C1-C6 claims ledger (C2/C4/C5 SUPPORTED, C1/C3/C6 honestly INCONCLUSIVE at smoke), always-emitted "Where This Model Fails" section, run manifest. Verdicts read real artifact schemas; all reads honour cfg.paths.root (REGWORLD_ARTIFACT_ROOT-safe). docs/MINIMAL_PATH.md written. |
 
 ## Divergences from PLAN.md
 See `docs/DEVIATIONS.md`; Phase 2 records the well-specified capacity control,
@@ -45,12 +45,18 @@ identifies (sealed tau_did_truth for the DiD; tau_true for the simulator), and v
 estimator correctness on a full-panel world. Recorded in DEVIATIONS.
 
 ## Next action
-Phase 6 (Stages 10, 11, 14) is implemented and wired: stage_rl, stage_ensemble, and
-stage_sensitivity all call into real code (no NotImplementedError stubs), full test
-suite (196 tests, incl. the dgp/oracle leakage firewall) + ruff + mypy are green, and
-§11 families 5 (planning utility) and 12 (sensitivity) run for real in eval_emulator.py.
-Remaining before Phase 6 can be called fully closed: `make rl ensemble sensitivity` at
-dev profile (only profile=smoke has been exercised, via the stages' own contract tests
-and this session's manual smoke runs of scripts/sensitivity.py + eval_emulator.py), and
-the coverage >= 0.85 gate has not been checked. Move to Phase 7 (Stages 12 hydra config
-polish, 13 tracking, 15 viz, 16 tooling, 17 report) once that dev-profile run is clean.
+All seven phases are implemented and wired end to end. The full 17-stage pipeline runs
+green at profile=smoke: `run_pipeline.py profile=smoke` finishes with every stage
+DONE/CACHED (0 FAILED, 0 BLOCKED), writes all 13 figures + 3 Plotly HTMLs, and
+regenerates reports/FINDINGS.md with all five required sections. ruff + mypy (90 source
+files) + the fast suite are green; no NotImplementedError stubs remain in stages.py.
+
+Remaining before a v0.1.0 tag (none block the smoke gate):
+- Dev/full-profile run: only profile=smoke has been exercised end to end. `make all`
+  (profile=dev) and the paper/full profile on a cluster have not been run; the coverage
+  >= 0.85 ensemble gate and the dev-profile claim verdicts (C1/C3/C6 are INCONCLUSIVE at
+  smoke by design) are still open.
+- The Phase 7 `docker build` gate step needs a Docker daemon (CI exercises it, not this
+  machine).
+- Stage 12 (Hydra) and 13 (tracking) were threaded through Phase 1 and are functioning;
+  they have no dedicated stage rows here beyond that.
