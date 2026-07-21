@@ -28,9 +28,9 @@ def test_recon_stage_runs_and_unbuilt_stages_block(smoke_cfg: RegWorldConfig) ->
     assert stages["recon"]["status"] == "DONE"
     recon_out = json.loads(Path(stages["recon"]["outputs"][0]).read_text())
     assert "versions" in recon_out
-    # figures (Stage 15) is not built yet and has no upstream, so it blocks honestly.
-    assert stages["figures"]["status"] == "BLOCKED"
-    assert "not built" in stages["figures"]["notes"]
+    # figures (Stage 15) has no hard upstream deps and degrades gracefully on missing
+    # artifacts, so a recon-only run still completes it (writing whatever it can).
+    assert stages["figures"]["status"] == "DONE"
     # emulator is built now, but a recon-only run never produced its observed-world
     # inputs, so it fails fast; its enabled hard dependent blocks on the failure.
     assert stages["emulator"]["status"] == "FAILED"

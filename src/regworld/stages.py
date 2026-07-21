@@ -328,8 +328,19 @@ def stage_sensitivity(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_figures(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 7, Stage 15")
+    """Stage 15: the 13 paper figures (Matplotlib) + Plotly exploration artifacts."""
+    from regworld.visualization.figures import make_all_figures
+    from regworld.visualization.interactive import make_all_interactive
+
+    figures = make_all_figures(cfg)
+    interactive = make_all_interactive(cfg)
+    tracker.log_metrics({"figures_written": float(len(figures) + len(interactive))})
+    return [*figures, *interactive]
 
 
 def stage_report(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    raise NotImplementedError("Phase 7, Stage 17")
+    """Stage 17: assemble reports/FINDINGS.md — claims ledger + required failure section."""
+    from regworld.evaluation.report import build_findings
+
+    findings = build_findings(cfg)
+    return [findings]
