@@ -46,8 +46,8 @@ def test_build_findings_produces_findings_md():
 
         assert result_path.exists()
         assert result_path.name == "FINDINGS.md"
-        assert result_path.read_text()  # Non-empty
-        assert len(result_path.read_text()) > 0
+        assert result_path.read_text(encoding="utf-8")  # Non-empty
+        assert len(result_path.read_text(encoding="utf-8")) > 0
 
 
 def test_build_findings_contains_required_heading_where_this_model_fails():
@@ -78,7 +78,7 @@ def test_build_findings_contains_required_heading_where_this_model_fails():
         (tmpdir_path / "reports" / "run_manifest.json").write_text("{}")
 
         result_path = build_findings(cfg)
-        content = result_path.read_text()
+        content = result_path.read_text(encoding="utf-8")
 
         # The heading MUST be present.
         assert "## Where This Model Fails" in content, (
@@ -115,7 +115,7 @@ def test_disclaimer_precedes_claims():
         (tmpdir_path / "reports" / "run_manifest.json").write_text("{}")
 
         result_path = build_findings(cfg)
-        content = result_path.read_text()
+        content = result_path.read_text(encoding="utf-8")
 
         # Find byte offsets
         disclaimer_pos = content.find("## Disclaimer")
@@ -165,7 +165,7 @@ def test_four_number_table_labels_present():
         (tmpdir_path / "reports" / "run_manifest.json").write_text("{}")
 
         result_path = build_findings(cfg)
-        content = result_path.read_text()
+        content = result_path.read_text(encoding="utf-8")
 
         # All four labels should be present
         assert "τ_true" in content, "τ_true label missing"
@@ -195,7 +195,7 @@ def test_graceful_degradation_missing_artifacts():
         result_path = build_findings(cfg)
 
         assert result_path.exists()
-        content = result_path.read_text()
+        content = result_path.read_text(encoding="utf-8")
         # The report should still be written, possibly with artifact-not-found notes
         assert len(content) > 0
         # It should indicate artifacts are missing
@@ -215,7 +215,7 @@ def test_build_findings_on_committed_artifacts():
     result_path = build_findings(cfg)
 
     assert result_path.exists()
-    content = result_path.read_text()
+    content = result_path.read_text(encoding="utf-8")
 
     # All five required sections
     assert "## Disclaimer" in content

@@ -144,7 +144,7 @@ def _report(metrics: dict[str, object], errors: dict[str, str], out: Path) -> No
             lines.append(json.dumps(payload, indent=2, default=str))
             lines.append("```")
         lines.append("")
-    out.write_text("\n".join(lines))
+    out.write_text("\n".join(lines), encoding="utf-8")
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")

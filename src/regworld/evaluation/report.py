@@ -455,6 +455,6 @@ def build_findings(cfg: RegWorldConfig) -> Path:
 
     # Write the report
     report_text = "\n".join(lines)
-    findings_path.write_text(report_text)
+    findings_path.write_text(report_text, encoding="utf-8")
     log.info("FINDINGS.md written to %s (%d lines)", findings_path, len(lines))
     return findings_path
