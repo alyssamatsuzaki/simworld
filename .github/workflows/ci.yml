@@ -16,11 +16,10 @@ jobs:
       - uses: astral-sh/setup-uv@v3
         with: { enable-cache: true }
       - run: uv python install ${{ matrix.python }}
-      - run: uv sync --extra dev --frozen
+      - run: uv sync --all-extras --frozen
       - run: make lint
       - run: make typecheck
       - run: make test
-      - run: uv sync --all-extras --frozen
       - run: make smoke
       - uses: actions/upload-artifact@v4
         if: always()
