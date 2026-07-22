@@ -3,8 +3,10 @@
 Hermetic tests write tiny synthetic artifacts under a ``smoke_cfg`` rooted in
 ``tmp_path`` and never touch a real checkpoint or posterior. Anything that
 needs the real trained emulator, calibrated posterior, or scenario cube is
-marked ``slow`` and runs against the artifacts already committed at the repo
-root (mirrors ``tests/test_ensemble_contract.py``'s end-to-end pattern).
+marked ``slow`` and skipped unless those artifacts already exist under the
+repo's (gitignored) ``artifacts/`` root from a prior local run — e.g. after
+``make emulator`` / ``make smoke`` (mirrors ``tests/test_ensemble_contract.py``'s
+end-to-end pattern). They never run on a fresh checkout, including in CI.
 """
 
 from __future__ import annotations
@@ -274,6 +276,11 @@ def test_make_all_figures_partial_artifacts_writes_only_what_it_can(
 
 # --------------------------------------------------------------------- slow -
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not Path("artifacts/emulator/rssm_gnn/model.pt").exists(),
+    reason="Requires a real trained emulator checkpoint (run `make emulator` first); "
+    "artifacts/ is gitignored, so a fresh checkout never has one",
+)
 def test_make_all_figures_end_to_end_on_real_artifacts() -> None:
     """Full run against the committed checkpoint, posterior, cube, and eval report."""
     from regworld.types import validate_config

@@ -8,6 +8,8 @@ marked ``slow``.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import polars as pl
 import polars.testing
@@ -168,6 +170,11 @@ def test_metrics_terminology_matches_validation_module() -> None:
 
 
 @pytest.mark.slow
+@pytest.mark.skipif(
+    not Path("artifacts/emulator/rssm_gnn/model.pt").exists(),
+    reason="Requires a real trained emulator checkpoint (run `make emulator` first); "
+    "artifacts/ is gitignored, so a fresh checkout never has one",
+)
 def test_run_ensemble_end_to_end_on_real_artifacts() -> None:
     """Full run against the real trained checkpoint + calibrated posterior."""
     from regworld.types import validate_config
