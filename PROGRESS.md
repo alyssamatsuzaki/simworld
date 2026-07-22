@@ -51,6 +51,23 @@ DONE/CACHED (0 FAILED, 0 BLOCKED), writes all 13 figures + 3 Plotly HTMLs, and
 regenerates reports/FINDINGS.md with all five required sections. ruff + mypy (90 source
 files) + the fast suite are green; no NotImplementedError stubs remain in stages.py.
 
+**2026-07-22, Windows port verified**: work resumed on a Windows x86_64 machine (prior
+sessions were macOS arm64). Installed `uv`, ran `uv sync --all-extras` (386 packages,
+clean resolve), fixed two Windows-only bugs (cp1252 default encoding crashing
+FINDINGS.md read/write, and console logging crashing on `→`/`─` in log messages — both
+in DEVIATIONS.md), then ran the full gate: `ruff check`/`ruff format --check`/`mypy`
+all green, fast suite 210 passed/1 skipped, `make smoke` (17-stage pipeline + slow
+tests) exit 0 with all stages DONE, 13/13 figures, FINDINGS.md rebuilt (same verdicts as
+the macOS run: C2/C4/C5 SUPPORTED, C1/C3/C6 INCONCLUSIVE; numeric values shifted
+slightly, expected platform-typical float/RNG drift), 11/11 slow tests passed. The
+pipeline itself took ~26 minutes wall time on this box (calibration 523s + emulator
+797s dominate) versus the documented "<6 min" smoke budget — that budget is a Linux CI
+gate (GitHub Actions), not a local-machine promise; this is a timing observation for
+local Windows dev, not a gate failure, and is not yet root-caused (candidates: no fork
+on Windows so every JAX/subprocess stage pays process-creation overhead, no MKL/BLAS
+acceleration in this environment, Windows Defender real-time scanning of short-lived
+Python subprocesses).
+
 Remaining before a v0.1.0 tag (none block the smoke gate):
 - Dev/full-profile run: only profile=smoke has been exercised end to end. `make all`
   (profile=dev) and the paper/full profile on a cluster have not been run; the coverage

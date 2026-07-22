@@ -11,7 +11,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 | Estimand | Value |
 |---|---|
 | τ_true (do() ATT, ground truth) | 0.4146 |
-| τ_abm (simulator DIL rollout) | 0.3771 |
+| τ_abm (simulator DIL rollout) | 0.3719 |
 | τ_qe (observational DML) | 0.0612 [95% CI: -0.1133, 0.2616] |
 | τ_obs (naive panel contrast) | 0.1245 [95% CI: 0.0308, 0.2182] |
 
@@ -23,7 +23,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** INCONCLUSIVE
 
-**Evidence:** Max R-hat=1.030 (>1.01) across 11 fitted parameters — convergence is not clean at this profile's draw count; recovery not yet assertable.
+**Evidence:** Max R-hat=1.020 (>1.01) across 11 fitted parameters — convergence is not clean at this profile's draw count; recovery not yet assertable.
 
 ### C2
 
@@ -31,7 +31,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** SUPPORTED
 
-**Evidence:** Four-number gate passed: naive observational τ_obs=0.125 is confidently wrong against τ_true=0.415, while the DiL simulator/DiD path recovers τ_abm=0.377 (sign and DiD agreement OK).
+**Evidence:** Four-number gate passed: naive observational τ_obs=0.125 is confidently wrong against τ_true=0.415, while the DiL simulator/DiD path recovers τ_abm=0.372 (sign and DiD agreement OK).
 
 ### C3
 
@@ -39,7 +39,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** INCONCLUSIVE
 
-**Evidence:** Distributional match marginal (W1=0.198); OOD degradation=1.23x.
+**Evidence:** Distributional match marginal (W1=0.167); OOD degradation=1.48x.
 
 ### C4
 
@@ -47,7 +47,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** SUPPORTED
 
-**Evidence:** Morris screening over 20 trajectories ranks the drivers phase_speed, subsidy, targeting; phase_speed dominates (mu*=0.213), so a small handful of parameters carry most of the outcome variance.
+**Evidence:** Morris screening over 20 trajectories ranks the drivers phase_speed, targeting, subsidy; phase_speed dominates (mu*=0.198), so a small handful of parameters carry most of the outcome variance.
 
 ### C5
 
@@ -69,32 +69,32 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 The pipeline is honest about its seams and the stages at which it cannot generalize:
 
-- **Out-of-distribution:** When enforcement is pushed 1.5x beyond training range, compliance MAE grows from 0.249 to 0.306 (1.2x growth). The emulator has not learned to extrapolate.
+- **Out-of-distribution:** When enforcement is pushed 1.5x beyond training range, compliance MAE grows from 0.193 to 0.286 (1.5x growth). The emulator has not learned to extrapolate.
 - **Horizon limits:** Multi-step compliance forecasting is useful only within 0 quarters. Beyond this horizon, the model's open-loop drift exceeds a 10% mean absolute error threshold.
 
 ## Run Manifest
 
 **Profile:** smoke
 **Seed:** 0
-**Git commit:** fc5c53f4159809c34ac4af9ed909882684e25d40
-**Total wall-clock time:** 560.1 seconds
+**Git commit:** decb1acadc6fc0eb30fa45edd1305501adebf040
+**Total wall-clock time:** 1551.3 seconds
 
 ### Stage-by-stage status
 
 | Stage | Status | Wall clock (s) | Notes |
 |---|---|---|---|
-| abm | CACHED | 0.00 |  |
-| calibration | DONE | 30.91 |  |
-| causal | DONE | 13.04 |  |
-| data | DONE | 2.69 |  |
-| emulator | FAILED | 496.08 | KeyError: 'n_firms' |
-| ensemble | BLOCKED | 0.00 | hard dependency failed: ['emulator'] |
-| envs | CACHED | 0.00 |  |
-| figures | DONE | 14.54 |  |
-| graphs | DONE | 1.81 |  |
-| marl | CACHED | 0.00 |  |
-| recon | DONE | 0.61 |  |
-| report | DONE | 0.00 |  |
-| rl | BLOCKED | 0.00 | hard dependency failed: ['emulator'] |
-| sensitivity | BLOCKED | 0.00 | hard dependency failed: ['emulator'] |
-| tensorized_abm | CACHED | 0.00 |  |
+| abm | DONE | 0.10 |  |
+| calibration | DONE | 523.07 |  |
+| causal | DONE | 60.67 |  |
+| data | CACHED | 0.00 |  |
+| emulator | DONE | 797.24 |  |
+| ensemble | DONE | 10.89 |  |
+| envs | DONE | 0.04 |  |
+| figures | DONE | 17.95 |  |
+| graphs | DONE | 4.27 |  |
+| marl | DONE | 0.04 |  |
+| recon | DONE | 2.87 |  |
+| report | DONE | 0.01 |  |
+| rl | DONE | 51.41 |  |
+| sensitivity | DONE | 82.57 |  |
+| tensorized_abm | DONE | 0.10 |  |
