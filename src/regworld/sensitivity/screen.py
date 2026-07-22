@@ -1,8 +1,16 @@
-"""SALib Morris screening → Sobol first/total-order indices on the GraphRSSM emulator.
+"""SALib sensitivity analysis for Stage 14a — two distinct questions, two designs.
 
-The objective J is the episode return (sum of regulator rewards) from a 24-quarter rollout
-in EmulatorEnv under a constant lever vector. Morris prunes the 4 factors (always all of them
-for now) by effect size; Sobol quantifies S1 (first-order) and ST (total-order) indices.
+**14a-i · Morris screening of the behavioral parameters θ on the ABM.** This is the
+analysis claim C4 rests on ("of ~16 uncertain parameters, a small handful drive most
+outcome variance — which tells the client what to measure next"). The factors are the
+§7.3 behavioral parameters, sampled inside their prior-derived central intervals, and
+each design point is a full tensorized-ABM rollout under the reference policy. Cheap:
+`morris_trajectories * (D + 1)` runs. Persisted under the ``morris_theta`` key.
+
+**14a-ii · Morris + Sobol over the four policy levers on the GraphRSSM emulator.** A
+different question — how much does each *lever* move the regulator's episode return J —
+answered on the emulator because Saltelli sampling needs tens of thousands of rollouts.
+Persisted under the ``morris`` and ``sobol`` keys.
 
 The emulator-vs-ABM cross-check evaluates a subsample of Sobol design points on the
 true ABM (tensorized) and computes the correlation of J across the subsample, confirming
@@ -13,7 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import cast
 
@@ -23,16 +31,238 @@ from SALib.analyze.morris import analyze as morris_analyze
 from SALib.analyze.sobol import analyze as sobol_analyze
 from SALib.sample.morris import sample as morris_sample
 from SALib.sample.sobol import sample as sobol_sample
+from scipy.stats import beta as beta_dist
+from scipy.stats import halfnorm, norm
 
 from regworld import rules
 from regworld.abm.model import load_observed_world
-from regworld.abm.tensorized import rollout_tensorized
+from regworld.abm.tensorized import TensorTrajectory, rollout_tensorized
 from regworld.environments.emulator_env import EmulatorEnv
 from regworld.training.checkpoint import checkpoint_path, load_checkpoint
 from regworld.training.datamodule import ACTION_HIGH, ACTION_LOW, load_theta_draws
 from regworld.types import RegWorldConfig
 
 log = logging.getLogger(__name__)
+
+# --------------------------------------------------------------------------------------
+# §14a-i — the behavioral parameters θ (PLAN §7.3), screened on the ABM
+# --------------------------------------------------------------------------------------
+
+# Prior families exactly as tabulated in PLAN §7.3. Only parameters that actually enter
+# the estimated ABM's transition equations are screenable:
+#   * ``beta_capacity`` multiplies the latent capacity z_i, which is answer-key-only and
+#     absent from the fitted model (§7.3) — it is not a factor the client could measure;
+#   * ``q0`` / ``q1`` are observation-model nuisance parameters (§7.9); they perturb the
+#     *reported* panel, not the dynamics, so an ABM rollout is constant in them.
+# That leaves D = 15 of the sixteen §7.3 parameters. Screening the other three would only
+# manufacture three guaranteed zeros.
+THETA_PRIORS: dict[str, tuple[str, tuple[float, ...]]] = {
+    # Group A — firm-decision logit
+    "beta_0": ("normal", (0.0, 2.0)),
+    "beta_enforce": ("halfnormal", (2.0,)),
+    "beta_cost": ("halfnormal", (2.0,)),
+    "beta_peer": ("normal", (1.0, 1.0)),
+    "beta_assoc": ("normal", (0.5, 1.0)),
+    "beta_size": ("normal", (0.0, 1.0)),
+    "beta_customer": ("halfnormal", (1.0,)),
+    "phi_phase": ("normal", (0.5, 0.5)),
+    "beta_stick": ("halfnormal", (1.0,)),
+    # Group B — consumer, market, and enforcement dynamics
+    "gamma_scale": ("beta", (3.0, 3.0)),
+    "ell_learn": ("beta", (2.0, 4.0)),
+    "alpha_trust": ("beta", (2.0, 5.0)),
+    "rho_influence": ("beta", (2.0, 8.0)),
+    "mu_privacy": ("halfnormal", (1.0,)),
+    "delta_exit": ("halfnormal", (0.5,)),
+}
+
+THETA_NAMES: tuple[str, ...] = tuple(THETA_PRIORS)
+
+# Central prior mass covered by each factor's Morris box.
+THETA_BOUND_QUANTILE = 0.05
+
+# Aggregate outcomes screened, per PLAN Stage 14a.
+THETA_OUTCOMES: tuple[str, ...] = (
+    "terminal_compliance",
+    "delta_hhi",
+    "exit_rate_cum",
+    "terminal_trust",
+)
+
+
+def _prior_interval(family: str, params: tuple[float, ...], q: float) -> tuple[float, float]:
+    """Central (1 - 2q) interval of a PLAN §7.3 prior."""
+    if family == "normal":
+        loc, scale = params
+        return float(norm.ppf(q, loc, scale)), float(norm.ppf(1.0 - q, loc, scale))
+    if family == "halfnormal":
+        (scale,) = params
+        return float(halfnorm.ppf(q, scale=scale)), float(halfnorm.ppf(1.0 - q, scale=scale))
+    if family == "beta":
+        a, b = params
+        return float(beta_dist.ppf(q, a, b)), float(beta_dist.ppf(1.0 - q, a, b))
+    raise ValueError(f"unknown prior family: {family}")
+
+
+def theta_bounds() -> list[list[float]]:
+    """Prior-derived Morris boxes: the central 90% interval of each §7.3 prior."""
+    return [
+        list(_prior_interval(family, params, THETA_BOUND_QUANTILE))
+        for family, params in THETA_PRIORS.values()
+    ]
+
+
+def _theta_problem() -> dict[str, object]:
+    """SALib problem dict for the screenable behavioral parameters θ (§7.3)."""
+    return {
+        "num_vars": len(THETA_NAMES),
+        "names": list(THETA_NAMES),
+        "bounds": theta_bounds(),
+    }
+
+
+def _theta_from_vector(base: rules.Theta, values: NDArray[np.float64]) -> rules.Theta:
+    """Bind one Morris design row onto a Theta, leaving unscreened fields at ``base``."""
+    return replace(
+        base,
+        **{name: float(value) for name, value in zip(THETA_NAMES, values, strict=True)},
+    )
+
+
+def _by_name(values: NDArray[np.float64] | list[float]) -> dict[str, float]:
+    """Zip a SALib per-factor array back onto the θ names."""
+    return {name: float(value) for name, value in zip(THETA_NAMES, np.asarray(values), strict=True)}
+
+
+def _reference_policy(cfg: RegWorldConfig) -> rules.PolicyLevers:
+    """Hold the levers at the configured static program while θ varies."""
+    return rules.PolicyLevers(
+        enforcement=float(cfg.policy.enforcement),
+        targeting=float(cfg.policy.targeting),
+        phase_speed=float(cfg.policy.phase_speed),
+        subsidy=float(cfg.policy.subsidy),
+    )
+
+
+def _theta_outcomes(trajectory: TensorTrajectory) -> dict[str, float]:
+    """Extract the four Stage-14a aggregate outcomes from a tensorized rollout."""
+    if not trajectory.outcomes:
+        return dict.fromkeys(THETA_OUTCOMES, float("nan"))
+    first, last = trajectory.outcomes[0], trajectory.outcomes[-1]
+    return {
+        "terminal_compliance": float(last.compliance_rate.item()),
+        "delta_hhi": float(last.hhi.item()) - float(first.hhi.item()),
+        "exit_rate_cum": float(last.exit_rate_cum.item()),
+        "terminal_trust": float(last.mean_trust.item()),
+    }
+
+
+def run_theta_screen(cfg: RegWorldConfig) -> dict[str, object]:
+    """Morris screening of the §7.3 behavioral parameters θ on the tensorized ABM.
+
+    This is the analysis behind claim C4: which of the uncertain behavioral parameters
+    actually move the outcomes, and therefore which the client should spend money
+    measuring. Every design point is a real ABM rollout — no emulator anywhere.
+
+    Returns the ``morris_theta`` payload (see ``run_sensitivity`` for the JSON shape).
+    """
+    problem = _theta_problem()
+    n_traj = max(2, int(cfg.sensitivity.morris_trajectories))
+    log.info(
+        "Morris θ-screen on the ABM: D=%d factors, %d trajectories, %d outcomes",
+        len(THETA_NAMES),
+        n_traj,
+        len(THETA_OUTCOMES),
+    )
+    samples = morris_sample(problem, N=n_traj, num_levels=4, seed=cfg.seed + 30_000)
+    log.info("Morris θ-screen sampled %d design points", samples.shape[0])
+
+    world = load_observed_world(cfg)
+    base_theta = rules.Theta()
+    policy = _reference_policy(cfg)
+
+    responses = np.full((samples.shape[0], len(THETA_OUTCOMES)), np.nan, dtype=np.float64)
+    failed = 0
+    for i, row in enumerate(samples):
+        try:
+            trajectory = rollout_tensorized(
+                cfg,
+                world,
+                _theta_from_vector(base_theta, row),
+                policy,
+                seed=cfg.seed + 30_000 + i,
+                quarters=cfg.horizon_quarters,
+            )
+            values = _theta_outcomes(trajectory)
+        except Exception as exc:  # a divergent θ draw must not kill the screen
+            log.warning("Morris θ-screen: rollout %d failed (%s)", i, exc)
+            failed += 1
+            continue
+        responses[i] = [values[name] for name in THETA_OUTCOMES]
+        if (i + 1) % max(1, samples.shape[0] // 4) == 0:
+            log.info("Morris θ-screen: %d/%d rollouts", i + 1, samples.shape[0])
+
+    if failed:
+        log.warning("Morris θ-screen: %d/%d rollouts failed", failed, samples.shape[0])
+    finite = np.isfinite(responses).all(axis=1)
+    if not finite.all():
+        # SALib's elementary-effect algebra needs a full design; impute the failures with
+        # the column mean so a single bad draw degrades rather than destroys the screen.
+        log.warning("Morris θ-screen: imputing %d non-finite responses", int((~finite).sum()))
+        column_means = np.nanmean(responses[finite], axis=0) if finite.any() else np.zeros(4)
+        responses = np.where(np.isfinite(responses), responses, column_means)
+
+    per_outcome: dict[str, object] = {}
+    mu_star_shares = np.zeros((len(THETA_OUTCOMES), len(THETA_NAMES)), dtype=np.float64)
+    for j, outcome_name in enumerate(THETA_OUTCOMES):
+        analysis = morris_analyze(
+            problem, samples, responses[:, j], num_levels=4, seed=cfg.seed + 30_000
+        )
+        mu_star = np.asarray(analysis["mu_star"], dtype=np.float64)
+        total = float(mu_star.sum())
+        mu_star_shares[j] = mu_star / total if total > 0.0 else 0.0
+        order = np.argsort(-mu_star)
+        per_outcome[outcome_name] = {
+            "mu": _by_name(analysis["mu"]),
+            "mu_star": _by_name(mu_star),
+            "sigma": _by_name(analysis["sigma"]),
+            "mu_star_conf": _by_name(analysis["mu_star_conf"]),
+            "ranking": [THETA_NAMES[k] for k in order],
+        }
+
+    mean_share = mu_star_shares.mean(axis=0)
+    ranking = [THETA_NAMES[k] for k in np.argsort(-mean_share)]
+    top_k = max(1, min(int(cfg.sensitivity.top_k), len(THETA_NAMES)))
+    screened_in = ranking[:top_k]
+
+    result: dict[str, object] = {
+        "method": "Morris elementary effects on the tensorized ABM",
+        "target": "abm",
+        "question": "which behavioral parameters θ (§7.3) drive outcome variance (claim C4)",
+        "num_vars": len(THETA_NAMES),
+        "names": list(THETA_NAMES),
+        "bounds": {
+            name: [float(lo), float(hi)]
+            for name, (lo, hi) in zip(THETA_NAMES, theta_bounds(), strict=True)
+        },
+        "bound_quantile": THETA_BOUND_QUANTILE,
+        "trajectories": n_traj,
+        "num_levels": 4,
+        "count": int(samples.shape[0]),
+        "failed_runs": failed,
+        "policy": list(policy.as_array().astype(float)),
+        "outcomes": list(THETA_OUTCOMES),
+        "per_outcome": per_outcome,
+        "mu_star_share_mean": {
+            name: float(value) for name, value in zip(THETA_NAMES, mean_share, strict=True)
+        },
+        "ranking": ranking,
+        "top_k": top_k,
+        "screened_in": screened_in,
+        "screened_out": ranking[top_k:],
+    }
+    log.info("Morris θ-screen: top %d drivers = %s", top_k, screened_in)
+    return result
 
 
 @dataclass
@@ -78,13 +308,17 @@ def _salib_problem() -> dict[str, object]:
 def run_screening(
     cfg: RegWorldConfig,
 ) -> dict[str, object]:
-    """Morris screening to rank the 4 factors by effect size.
+    """Morris screening of the 4 *policy levers* on the emulator, ranked by effect size.
+
+    Distinct from :func:`run_theta_screen`, which screens the behavioral parameters θ on
+    the ABM and is what claim C4 rests on. This one ranks the levers by their effect on
+    the regulator's episode return J.
 
     Returns a dict with:
     - morris_mu: mean effect
     - morris_sigma: standard deviation of effect
     - morris_mu_star: mean absolute effect (rank)
-    - count: number of trajectories = 8 * (num_vars + 1) = 40
+    - count: number of design points = morris_trajectories * (num_vars + 1)
     """
     log.info(
         "Starting Morris screening (D+1 method, %d trajectories)",
@@ -263,11 +497,22 @@ def run_abm_cross_check(
 
 
 def run_sensitivity(cfg: RegWorldConfig) -> SensitivityResult:
-    """Main entry point: Morris screening + Sobol analysis + ABM cross-check."""
+    """Main entry point: θ Morris screen on the ABM, then levers on the emulator.
+
+    Writes ``indices.json`` with four top-level keys:
+
+    - ``morris_theta`` — Stage 14a-i, Morris elementary effects over the §7.3 behavioral
+      parameters θ evaluated on the tensorized ABM. **This is claim C4.**
+    - ``morris`` — Morris over the 4 policy levers on the emulator (J = episode return).
+    - ``sobol`` — Saltelli/Sobol S1 and ST over the same 4 levers on the emulator.
+    - ``abm_check`` — emulator-vs-ABM agreement on a Sobol subsample.
+    """
     log.info("§14 Sensitivity analysis starting (profile=%s)", cfg.profile_name)
 
     sensitivity_dir = Path(cfg.paths.root) / "sensitivity"
     sensitivity_dir.mkdir(parents=True, exist_ok=True)
+
+    theta_result = run_theta_screen(cfg)
 
     morris_result = run_screening(cfg)
 
@@ -276,6 +521,7 @@ def run_sensitivity(cfg: RegWorldConfig) -> SensitivityResult:
     abm_result = run_abm_cross_check(cfg, sobol_samples, sobol_outputs)
 
     indices_obj = {
+        "morris_theta": theta_result,
         "morris": morris_result,
         "sobol": sobol_result,
         "abm_check": abm_result,
@@ -285,12 +531,16 @@ def run_sensitivity(cfg: RegWorldConfig) -> SensitivityResult:
     log.info("Sensitivity indices → %s", indices_path)
 
     s1_dict = cast(dict[str, float], sobol_result["S1"])
+    theta_ranking = cast(list[str], theta_result["ranking"])
     summary_obj: dict[str, object] = {
         "profile": cfg.profile_name,
         "seed": cfg.seed,
         "horizon_quarters": cfg.horizon_quarters,
-        "methods": ["Morris", "Sobol"],
+        "methods": ["Morris (θ on ABM)", "Morris (levers on emulator)", "Sobol (levers)"],
         "factors": 4,
+        "theta_factors": theta_result["num_vars"],
+        "theta_top_drivers": theta_result["screened_in"],
+        "theta_top_driver": theta_ranking[0] if theta_ranking else None,
         "top_driver_by_s1": max(s1_dict.items(), key=lambda x: x[1])[0],
         "top_driver_s1_value": float(max(s1_dict.values())),
         "abm_check_spearman_corr": abm_result["emulator_vs_abm_spearman_corr"],
@@ -301,6 +551,9 @@ def run_sensitivity(cfg: RegWorldConfig) -> SensitivityResult:
     log.info("Sensitivity summary → %s", summary_path)
 
     metrics: dict[str, float] = {
+        "morris_theta_factors": float(cast(int, theta_result["num_vars"])),
+        "morris_theta_count": float(cast(int, theta_result["count"])),
+        "morris_theta_failed": float(cast(int, theta_result["failed_runs"])),
         "morris_count": float(cast(int, morris_result["count"])),
         "sobol_count": float(cast(int, sobol_result["count"])),
         "abm_check_points": float(cast(int, abm_result["sample_size"])),

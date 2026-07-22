@@ -304,11 +304,19 @@ def stage_rl(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_ensemble(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
-    """Stage 11: Ray-scalable scenario cube + ABM cross-validation."""
+    """Stage 11: Ray-scalable scenario cube + ABM cross-validation.
+
+    The Phase-6 acceptance gate (§10 Stage 11, §18) is coverage >= 0.85 against the ABM
+    cross-check. It is enforced *after* the cube and summary are written, so a failing
+    gate marks the stage FAILED without destroying the artifacts needed to diagnose it.
+    Ungated at profile=smoke, where too few cells make the number meaningless.
+    """
     from regworld.ensemble import run_ensemble
+    from regworld.ensemble.validation import enforce_coverage_gate
 
     result = run_ensemble(cfg)
     tracker.log_metrics(result.metrics)
+    enforce_coverage_gate(cfg, float(result.metrics["coverage"]))
     return [result.cube, result.summary]
 
 

@@ -39,7 +39,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** INCONCLUSIVE
 
-**Evidence:** Distributional match marginal (W1=0.167); OOD degradation=1.48x.
+**Evidence:** W1 distance=0.167, OOD error growth=1.48x, but the Stage-11 ABM cross-check covers only 4.00% of outcomes (threshold 85%), so the emulator this rests on is not validated.
 
 ### C4
 
@@ -47,15 +47,15 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** SUPPORTED
 
-**Evidence:** Morris screening over 20 trajectories ranks the drivers phase_speed, targeting, subsidy; phase_speed dominates (mu*=0.198), so a small handful of parameters carry most of the outcome variance.
+**Evidence:** Morris elementary effects over 15 behavioral parameters on the tensorized ABM (64 rollouts) rank the drivers beta_enforce, delta_exit, beta_0; the top three carry 52% of mean mu* share, so a small handful dominate. (15 of the 16 §7.3 parameters enter the forecast dynamics; beta_capacity is answer-key-only and q0/q1 are observation-model-only, so screening them on the ABM would manufacture guaranteed zeros.) Optuna policy search reached best J=13.070.
 
 ### C5
 
 **Claim:** Aggressive uniform enforcement maximizes compliance and backfires on market concentration: small firms exit, HHI rises. Phased, targeted enforcement buys nearly the same compliance for materially less concentration. Reported as a Pareto frontier with credible intervals across the parameter posterior.
 
-**Verdict:** SUPPORTED
+**Verdict:** INCONCLUSIVE
 
-**Evidence:** Scenario cube built over 48 cells / 6 policies; the Pareto frontier (terminal compliance vs ΔHHI) carries a backfire probability of 0.00% across the posterior.
+**Evidence:** Scenario cube built over 48 cells / 6 policies; backfire probability 0.00%. Verdict withheld: the Stage-11 ABM cross-check covers only 4.00% of outcomes (threshold 85%), so the emulator this rests on is not validated.
 
 ### C6
 
@@ -63,7 +63,7 @@ Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below repor
 
 **Verdict:** INCONCLUSIVE
 
-**Evidence:** MARL comparison not yet computed (pending Phase 6).
+**Evidence:** Stage-10d ablation (ippo_iterated_best_response, 32 paired episodes, 2000 training timesteps) compared strategic top-K firms against rule-based firms on the C5 headline metrics. Result: no headline metric moved. Verdict withheld: at 2000 timesteps the strategic firms are far below the ~200k the ablation calls for, so this null measures the training budget, not the absence of strategic effects.
 
 ## Where This Model Fails
 

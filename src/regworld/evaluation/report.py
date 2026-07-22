@@ -161,6 +161,31 @@ def build_findings(cfg: RegWorldConfig) -> Path:
     sensitivity_summary = _read_artifact(artifacts_dir / "sensitivity" / "sensitivity_summary.json")
     sensitivity_indices = _read_artifact(artifacts_dir / "sensitivity" / "indices.json")
     calib_micro = _read_artifact(artifacts_dir / "calibration" / "micro_diagnostics.json")
+    ensemble_validation = _read_artifact(artifacts_dir / "ensemble" / "validation_report.json")
+
+    # Every emulator-derived claim (C3, C4, C5) inherits the emulator's credibility.
+    # Stage 11's ABM cross-check is the measurement of that credibility, so a cube built
+    # on an emulator that failed it cannot support a claim no matter how complete the
+    # artifact looks (§10 Stage 11: "the entire ensemble is decoration").
+    _emulator_coverage = ensemble_validation.get("coverage") if ensemble_validation else None
+    _coverage_threshold = (
+        ensemble_validation.get("threshold", 0.85) if ensemble_validation else 0.85
+    )
+    _emulator_untrustworthy = (
+        _emulator_coverage is not None
+        and isinstance(_emulator_coverage, int | float)
+        and _emulator_coverage == _emulator_coverage  # not NaN
+        and _emulator_coverage < _coverage_threshold
+    )
+    _coverage_caveat = (
+        (
+            f"the Stage-11 ABM cross-check covers only {_emulator_coverage:.2%} of outcomes "
+            f"(threshold {_coverage_threshold:.0%}), so the emulator this rests on is not "
+            "validated"
+        )
+        if _emulator_untrustworthy
+        else ""
+    )
 
     for claim_key in ["C1", "C2", "C3", "C4", "C5", "C6"]:
         claim_text, metric_key = claims[claim_key]
@@ -244,7 +269,13 @@ def build_findings(cfg: RegWorldConfig) -> Path:
                 w1 = distributional.get("w1_compliance", None)
                 error_growth = ood_data.get("error_growth_factor_at_1p5", None)
                 if w1 is not None and error_growth is not None:
-                    if w1 < 0.1 and error_growth < 1.5:
+                    if _emulator_untrustworthy:
+                        verdict = "INCONCLUSIVE"
+                        evidence = (
+                            f"W1 distance={w1:.3f}, OOD error growth={error_growth:.2f}x, but "
+                            f"{_coverage_caveat}."
+                        )
+                    elif w1 < 0.1 and error_growth < 1.5:
                         verdict = "SUPPORTED"
                         evidence = f"W1 distance={w1:.3f}, OOD error growth={error_growth:.2f}x."
                     else:
@@ -261,12 +292,19 @@ def build_findings(cfg: RegWorldConfig) -> Path:
         elif claim_key == "C4":
             # C4: Sensitivity indices. Morris mu* and Sobol total-order indices live in
             # indices.json (sensitivity_summary.json only carries counts + Optuna best).
-            morris = sensitivity_indices.get("morris", {}) if sensitivity_indices else {}
-            mu_star = morris.get("morris_mu_star", {})
-            if mu_star:
-                ranked = sorted(mu_star.items(), key=lambda x: abs(x[1]), reverse=True)
-                top_names = ", ".join(name for name, _ in ranked[:3])
-                lead_name, lead_val = ranked[0]
+            # C4 is a claim about the BEHAVIORAL parameters theta (§7.3), not the four
+            # policy levers. The lever screen ("morris") runs on the emulator and answers a
+            # different question; only the theta screen ("morris_theta", Morris elementary
+            # effects on the tensorized ABM) can carry this claim.
+            theta_screen = (
+                sensitivity_indices.get("morris_theta", {}) if sensitivity_indices else {}
+            )
+            shares = theta_screen.get("mu_star_share_mean", {})
+            ranking = theta_screen.get("ranking", [])
+            if shares and ranking:
+                top_names = ", ".join(ranking[:3])
+                top3_share = sum(float(shares.get(name, 0.0)) for name in ranking[:3])
+                n_vars = theta_screen.get("num_vars", len(ranking))
                 optuna_best = (
                     sensitivity_summary.get("optuna_best_J") if sensitivity_summary else None
                 )
@@ -275,14 +313,34 @@ def build_findings(cfg: RegWorldConfig) -> Path:
                     if optuna_best is not None
                     else ""
                 )
-                verdict = "SUPPORTED"
-                evidence = (
-                    f"Morris screening over {morris.get('count', '?')} trajectories ranks the "
-                    f"drivers {top_names}; {lead_name} dominates (mu*={lead_val:.3f}), so a small "
-                    f"handful of parameters carry most of the outcome variance.{optuna_note}"
+                scope_note = (
+                    f" ({n_vars} of the 16 §7.3 parameters enter the forecast dynamics; "
+                    "beta_capacity is answer-key-only and q0/q1 are observation-model-only, "
+                    "so screening them on the ABM would manufacture guaranteed zeros.)"
                 )
+                # "A small handful drive most outcome variance" is the claim; require the
+                # top three to actually concentrate effect, rather than merely existing.
+                if top3_share >= 0.5:
+                    verdict = "SUPPORTED"
+                    evidence = (
+                        f"Morris elementary effects over {n_vars} behavioral parameters on the "
+                        f"tensorized ABM ({theta_screen.get('count', '?')} rollouts) rank the "
+                        f"drivers {top_names}; the top three carry {top3_share:.0%} of mean "
+                        f"mu* share, so a small handful dominate.{scope_note}{optuna_note}"
+                    )
+                else:
+                    verdict = "INCONCLUSIVE"
+                    evidence = (
+                        f"Morris elementary effects over {n_vars} behavioral parameters rank "
+                        f"{top_names} highest, but the top three carry only {top3_share:.0%} of "
+                        f"mean mu* share — effect is spread too evenly to call a small handful "
+                        f"dominant.{scope_note}{optuna_note}"
+                    )
             else:
-                evidence = "Artifact `artifacts/sensitivity/indices.json` (Morris mu*) not found."
+                evidence = (
+                    "Artifact `artifacts/sensitivity/indices.json` has no `morris_theta` block; "
+                    "the theta screen (Stage 14a) has not run. The lever screen cannot carry C4."
+                )
 
         elif claim_key == "C5":
             # C5: Ensemble + Pareto frontier. Backfire probability lives in the summary's
@@ -299,12 +357,30 @@ def build_findings(cfg: RegWorldConfig) -> Path:
                     n_cells = ens_metrics.get("n_cells")
                     n_policies = int(n_policies) if n_policies is not None else "?"
                     n_cells = int(n_cells) if n_cells is not None else "?"
-                    verdict = "SUPPORTED"
-                    evidence = (
-                        f"Scenario cube built over {n_cells} cells / {n_policies} policies; the "
-                        f"Pareto frontier (terminal compliance vs ΔHHI) carries a backfire "
-                        f"probability of {backfire_rate:.2%} across the posterior."
+                    base = (
+                        f"Scenario cube built over {n_cells} cells / {n_policies} policies; "
+                        f"backfire probability {backfire_rate:.2%}."
                     )
+                    # A cube that exists is not a cube that shows anything. C5 asserts a
+                    # specific regime (compliance up, HHI up, CS down); if the ensemble never
+                    # enters it, or rests on an unvalidated emulator, the claim is not carried.
+                    if _emulator_untrustworthy:
+                        verdict = "INCONCLUSIVE"
+                        evidence = f"{base} Verdict withheld: {_coverage_caveat}."
+                    elif backfire_rate <= 0.0:
+                        verdict = "INCONCLUSIVE"
+                        evidence = (
+                            f"{base} The backfire regime never occurs anywhere in this "
+                            "ensemble, so the compliance-versus-concentration trade-off C5 "
+                            "asserts is not exhibited; a cube containing no backfire cannot "
+                            "support a backfire claim."
+                        )
+                    else:
+                        verdict = "SUPPORTED"
+                        evidence = (
+                            f"{base} The Pareto frontier (terminal compliance vs ΔHHI) "
+                            "exhibits the backfire regime across the ensemble."
+                        )
                 else:
                     verdict = "INCONCLUSIVE"
                     evidence = "Ensemble summary present but no backfire_rate field."
@@ -312,21 +388,55 @@ def build_findings(cfg: RegWorldConfig) -> Path:
                 evidence = "Artifact `artifacts/ensemble/ensemble_summary.json` not found."
 
         elif claim_key == "C6":
-            # C6: MARL ablation. Check planning_utility metrics.
-            planning_data = eval_metrics.get("planning_utility", {})
-            if isinstance(planning_data, dict):
-                marl_delta = planning_data.get("marl_vs_single_agent_delta", None)
-                if marl_delta is not None:
-                    if abs(marl_delta) < 0.05:
-                        verdict = "SUPPORTED"
-                        evidence = f"MARL effect negligible (delta={marl_delta:+.3f})."
-                    else:
-                        verdict = "SUPPORTED"
-                        evidence = f"MARL effect significant (delta={marl_delta:+.3f})."
+            # C6 asks whether strategic firms change C5. Only the Stage-10d MARL ablation
+            # can answer it; planning_utility is a single-agent metric and was the wrong
+            # source. A null here is only meaningful if the strategic firms were actually
+            # trained enough to behave strategically (§10 Stage 10d: 200k steps).
+            marl = _read_artifact(artifacts_dir / "marl" / "c6_comparison.json")
+            comparison = marl.get("comparison", {}) if marl else {}
+            if comparison:
+                changed = comparison.get("changed_metrics", []) or []
+                training = marl.get("training", {})
+                budget = training.get("budget_timesteps")
+                n_eval = marl.get("n_eval_episodes", "?")
+                backend = marl.get("backend", "unknown")
+                undertrained = isinstance(budget, int | float) and budget < 50_000
+                base = (
+                    f"Stage-10d ablation ({backend}, {n_eval} paired episodes, "
+                    f"{budget if budget is not None else '?'} training timesteps) compared "
+                    "strategic top-K firms against rule-based firms on the C5 headline metrics."
+                )
+                if undertrained:
+                    verdict = "INCONCLUSIVE"
+                    detail = (
+                        f"no headline metric moved ({', '.join(changed)})"
+                        if changed
+                        else "no headline metric moved"
+                    )
+                    evidence = (
+                        f"{base} Result: {detail}. Verdict withheld: at {budget} timesteps the "
+                        "strategic firms are far below the ~200k the ablation calls for, so this "
+                        "null measures the training budget, not the absence of strategic effects."
+                    )
+                elif changed:
+                    verdict = "REFUTED"
+                    evidence = (
+                        f"{base} Strategic firms moved {', '.join(changed)} with "
+                        "non-overlapping 95% CIs: MARL changes the C5 conclusion."
+                    )
                 else:
-                    evidence = "MARL comparison not yet computed (pending Phase 6)."
+                    verdict = "SUPPORTED"
+                    evidence = (
+                        f"{base} No headline metric moved with a non-overlapping 95% CI, so "
+                        "modelling the largest firms as strategic learners did not change C5 — "
+                        "a clean negative result, and the honest outcome for most policy "
+                        "questions (§17)."
+                    )
             else:
-                evidence = "Planning utility artifact missing."
+                evidence = (
+                    "Artifact `artifacts/marl/c6_comparison.json` not found; the Stage-10d "
+                    "MARL ablation has not run, so C6 is unanswered."
+                )
 
         lines.append(f"**Verdict:** {verdict}")
         lines.append("")
@@ -396,19 +506,30 @@ def build_findings(cfg: RegWorldConfig) -> Path:
                 "(pending Phase 6). Report separately if applicable."
             )
 
-    # DEGRADED stages from run manifest
+    # Stages that did not run cleanly, from the run manifest (§15: a degraded run that
+    # reports itself as clean is misconduct — FAILED/BLOCKED must surface here too, not
+    # only in the manifest table).
     manifest = _read_artifact(reports_dir / "run_manifest.json")
     if manifest and "stages" in manifest:
-        degraded_stages = [
-            name
-            for name, stage_info in manifest["stages"].items()
-            if isinstance(stage_info, dict) and stage_info.get("status") == "DEGRADED"
-        ]
-        if degraded_stages:
-            failure_notes.append(
-                f"**Degraded stages:** {', '.join(degraded_stages)} ran with substitutions "
-                "or limitations; check the run manifest notes for details."
-            )
+        by_status: dict[str, list[str]] = {}
+        for name, stage_info in manifest["stages"].items():
+            if not isinstance(stage_info, dict):
+                continue
+            status = stage_info.get("status")
+            if status in {"DEGRADED", "FAILED", "BLOCKED"}:
+                by_status.setdefault(str(status), []).append(name)
+        _status_note = {
+            "DEGRADED": "ran with substitutions or limitations",
+            "FAILED": "did not complete; every claim downstream of them is unsupported",
+            "BLOCKED": "could not be built at all",
+        }
+        for status in ("FAILED", "BLOCKED", "DEGRADED"):
+            names = by_status.get(status)
+            if names:
+                failure_notes.append(
+                    f"**{status.capitalize()} stages:** {', '.join(sorted(names))} "
+                    f"{_status_note[status]}; check the run manifest notes for details."
+                )
 
     if failure_notes:
         for note in failure_notes:

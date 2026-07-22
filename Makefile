@@ -11,6 +11,8 @@ help:            ## Show targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-16s\033[0m %s\n",$$1,$$2}'
 
 setup:           ## Install deps + hooks
+	uv sync --all-extras && $(RUN) pre-commit install
+setup-min:       ## Core + dev only (lint/typecheck/fast tests; NOT enough for the pipeline)
 	uv sync --extra dev && $(RUN) pre-commit install
 lock:            ## Refresh the lockfile
 	uv lock
@@ -72,6 +74,6 @@ docker-run:
 clean:
 	rm -rf experiments/* artifacts/* reports/figures/* .pytest_cache .mypy_cache
 
-.PHONY: help setup lock lint typecheck test test-slow data graphs abm calibrate causal emulator eval-emulator \
+.PHONY: help setup setup-min lock lint typecheck test test-slow data graphs abm calibrate causal emulator eval-emulator \
         rl ensemble sensitivity figures report all smoke paper sweep slurm dashboard \
         docker-build docker-run clean

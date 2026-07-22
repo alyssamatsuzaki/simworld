@@ -1,7 +1,9 @@
 """§14 Stage 14: fast hermetic tests for sensitivity analysis.
 
-Tests validate the SALib problem dict, Morris and Sobol execution on a toy objective,
-and Optuna optimization. No dependency on artifacts/ or real checkpoint.
+Covers the two distinct designs Stage 14a specifies — the Morris screen over the §7.3
+behavioral parameters theta (claim C4) and the Sobol analysis over the policy levers —
+plus the Ishigami recovery gate (§11 family 12) and Optuna. No dependency on artifacts/
+or a real checkpoint.
 """
 
 from __future__ import annotations
@@ -13,7 +15,14 @@ from SALib.analyze.sobol import analyze as sobol_analyze
 from SALib.sample.morris import sample as morris_sample
 from SALib.sample.sobol import sample as sobol_sample
 
-from regworld.sensitivity.screen import _salib_problem
+from regworld.rules import Theta
+from regworld.sensitivity.screen import (
+    THETA_NAMES,
+    _salib_problem,
+    _theta_from_vector,
+    _theta_problem,
+    theta_bounds,
+)
 from regworld.training.datamodule import ACTION_HIGH, ACTION_LOW
 
 
@@ -86,16 +95,18 @@ class TestSobolAnalysis:
             assert np.all(samples[:, i] <= bounds[1]), f"{name} samples above upper bound"
 
     def test_sobol_analyze_output(self) -> None:
+        """Shape/ordering contract on the lever problem with a nonlinear toy response.
+
+        This is deliberately NOT the Ishigami check — the lever bounds are not
+        U(-pi, pi) and there are four factors, not three. The real Ishigami recovery
+        test lives in :class:`TestIshigamiRecovery`.
+        """
         problem = _salib_problem()
         samples = sobol_sample(problem, N=64, calc_second_order=False, seed=0)
-        # Ishigami-like: a = 7, b = 0.1
-        # y = sin(a*x1) + a*sin²(b*x2) + b*x3⁴*sin(a*x1)
-        # True S1: [0.31, 0.44, 0.0]
-        a, b = 7.0, 0.1
         outputs = (
-            np.sin(a * samples[:, 0])
-            + a * (np.sin(b * samples[:, 1]) ** 2)
-            + b * (samples[:, 2] ** 4) * np.sin(a * samples[:, 0])
+            np.sin(3.0 * samples[:, 0])
+            + 2.0 * samples[:, 1] ** 2
+            + 0.5 * samples[:, 2] * samples[:, 3]
         )
         result = sobol_analyze(problem, outputs, seed=0, calc_second_order=False)
 
@@ -117,6 +128,156 @@ class TestSobolAnalysis:
         assert np.all(result["S1"] <= 1.0)
         assert np.all(result["ST"] >= 0.0)
         assert np.all(result["ST"] <= 1.0)
+
+
+# --------------------------------------------------------------------------------------
+# The Ishigami gate (PLAN Stage 14a acceptance tests, §11 family 12)
+# --------------------------------------------------------------------------------------
+
+ISHIGAMI_A = 7.0
+ISHIGAMI_B = 0.1
+
+# Analytic Sobol indices of the Ishigami function on U(-pi, pi)^3 at a=7, b=0.1.
+ISHIGAMI_S1_TRUE = np.array([0.3139, 0.4424, 0.0])
+ISHIGAMI_ST_TRUE = np.array([0.5576, 0.4424, 0.2437])
+
+# Empirically achieved at N=8192 is max|error| < 0.002 across seeds 0-5; 0.01 leaves
+# headroom for SALib sampler changes without being satisfiable by a wrong wiring
+# (a mis-scaled or mis-ordered design misses by >0.05).
+ISHIGAMI_N = 8192
+ISHIGAMI_TOL = 0.01
+
+
+def ishigami_problem() -> dict[str, object]:
+    """The canonical Ishigami problem: exactly 3 factors, each U(-pi, pi)."""
+    return {
+        "num_vars": 3,
+        "names": ["x1", "x2", "x3"],
+        "bounds": [[-np.pi, np.pi], [-np.pi, np.pi], [-np.pi, np.pi]],
+    }
+
+
+def ishigami(x: np.ndarray, a: float = ISHIGAMI_A, b: float = ISHIGAMI_B) -> np.ndarray:
+    """f(x) = sin(x1) + a*sin^2(x2) + b*x3^4*sin(x1)."""
+    return (
+        np.sin(x[:, 0]) + a * np.sin(x[:, 1]) ** 2 + b * (x[:, 2] ** 4) * np.sin(x[:, 0])
+    ).astype(np.float64)
+
+
+class TestIshigamiRecovery:
+    """Sobol must recover the known Ishigami indices — this catches sampler wiring bugs."""
+
+    def test_ishigami_problem_is_canonical(self) -> None:
+        problem = ishigami_problem()
+        assert problem["num_vars"] == 3
+        assert len(problem["bounds"]) == 3
+        for lo, hi in problem["bounds"]:
+            assert lo == -np.pi
+            assert hi == np.pi
+
+    def test_sobol_recovers_ishigami_first_order(self) -> None:
+        problem = ishigami_problem()
+        samples = sobol_sample(problem, N=ISHIGAMI_N, calc_second_order=False, seed=0)
+        # Saltelli without second order: N * (D + 2) rows.
+        assert samples.shape == (ISHIGAMI_N * (3 + 2), 3)
+        result = sobol_analyze(problem, ishigami(samples), calc_second_order=False, seed=0)
+
+        s1 = np.asarray(result["S1"], dtype=np.float64)
+        errors = np.abs(s1 - ISHIGAMI_S1_TRUE)
+        assert np.all(errors < ISHIGAMI_TOL), (
+            f"S1 = {s1} vs analytic {ISHIGAMI_S1_TRUE} (abs error {errors})"
+        )
+
+    def test_sobol_recovers_ishigami_total_order(self) -> None:
+        problem = ishigami_problem()
+        samples = sobol_sample(problem, N=ISHIGAMI_N, calc_second_order=False, seed=0)
+        result = sobol_analyze(problem, ishigami(samples), calc_second_order=False, seed=0)
+
+        st = np.asarray(result["ST"], dtype=np.float64)
+        errors = np.abs(st - ISHIGAMI_ST_TRUE)
+        assert np.all(errors < ISHIGAMI_TOL), (
+            f"ST = {st} vs analytic {ISHIGAMI_ST_TRUE} (abs error {errors})"
+        )
+
+    def test_ishigami_x3_is_pure_interaction(self) -> None:
+        """x3 has zero first-order effect but a large total effect — the diagnostic case."""
+        problem = ishigami_problem()
+        samples = sobol_sample(problem, N=ISHIGAMI_N, calc_second_order=False, seed=0)
+        result = sobol_analyze(problem, ishigami(samples), calc_second_order=False, seed=0)
+
+        s1 = np.asarray(result["S1"], dtype=np.float64)
+        st = np.asarray(result["ST"], dtype=np.float64)
+        assert abs(s1[2]) < ISHIGAMI_TOL
+        assert st[2] > 0.2
+        assert np.all(st >= s1 - ISHIGAMI_TOL)
+
+
+# --------------------------------------------------------------------------------------
+# Stage 14a-i — the theta screen (claim C4)
+# --------------------------------------------------------------------------------------
+
+
+class TestThetaScreenProblem:
+    """The Morris screen must run over the behavioral parameters, not the policy levers."""
+
+    def test_theta_problem_is_the_behavioral_parameters(self) -> None:
+        problem = _theta_problem()
+        assert problem["num_vars"] == len(THETA_NAMES)
+        assert problem["num_vars"] >= 15, "claim C4 screens the ~16 behavioral parameters"
+        assert problem["names"] == list(THETA_NAMES)
+        assert len(problem["bounds"]) == problem["num_vars"]
+        # These are theta, not levers.
+        assert "enforcement" not in problem["names"]
+        assert "beta_enforce" in problem["names"]
+
+    def test_theta_names_are_real_theta_fields(self) -> None:
+        fields = set(Theta.__dataclass_fields__)
+        for name in THETA_NAMES:
+            assert name in fields, f"{name} is not a rules.Theta field"
+
+    def test_theta_names_cover_both_prior_groups(self) -> None:
+        theta = Theta()
+        screened = set(THETA_NAMES)
+        # Every Group B parameter is screenable.
+        assert set(theta.group_b_names()) <= screened
+        # Group A minus the observation-model nuisance pair (q0/q1 do not enter dynamics).
+        group_a = set(theta.group_a_names()) - {"q0", "q1"}
+        assert group_a <= screened
+        # beta_capacity is answer-key-only and absent from the fitted model (PLAN 7.3).
+        assert "beta_capacity" not in screened
+
+    def test_theta_bounds_bracket_the_prior_centres(self) -> None:
+        bounds = theta_bounds()
+        assert len(bounds) == len(THETA_NAMES)
+        for name, (lo, hi) in zip(THETA_NAMES, bounds, strict=True):
+            assert hi > lo, f"{name} has a degenerate box"
+            assert np.isfinite(lo) and np.isfinite(hi), f"{name} has a non-finite bound"
+        by_name = dict(zip(THETA_NAMES, bounds, strict=True))
+        # HalfNormal / Beta supports are non-negative.
+        for name in ("beta_enforce", "beta_cost", "beta_customer", "beta_stick"):
+            assert by_name[name][0] >= 0.0
+        for name in ("gamma_scale", "ell_learn", "alpha_trust", "rho_influence"):
+            assert 0.0 <= by_name[name][0] < by_name[name][1] <= 1.0
+
+    def test_theta_morris_samples_within_bounds(self) -> None:
+        problem = _theta_problem()
+        samples = morris_sample(problem, N=4, num_levels=4, seed=0)
+        assert samples.shape == (4 * (problem["num_vars"] + 1), problem["num_vars"])
+        for i, (name, (lo, hi)) in enumerate(zip(problem["names"], problem["bounds"], strict=True)):
+            assert np.all(samples[:, i] >= lo), f"{name} below prior box"
+            assert np.all(samples[:, i] <= hi), f"{name} above prior box"
+
+    def test_theta_from_vector_binds_every_screened_field(self) -> None:
+        problem = _theta_problem()
+        row = morris_sample(problem, N=4, num_levels=4, seed=0)[0]
+        base = Theta()
+        bound = _theta_from_vector(base, row)
+        for name, value in zip(THETA_NAMES, row, strict=True):
+            assert getattr(bound, name) == float(value)
+        # Unscreened fields are untouched.
+        assert bound.beta_capacity == base.beta_capacity
+        assert bound.q0 == base.q0
+        assert bound.q1 == base.q1
 
 
 class TestOptuna:
