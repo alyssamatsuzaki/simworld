@@ -9,7 +9,13 @@ from omegaconf import DictConfig
 
 from regworld.causal.did import estimate_did
 from regworld.causal.estimate import cate_by_group, dml_audit, dml_onset, naive_logit_audit
-from regworld.causal.graph import analyst_dag, observed_adjustment_set, true_dag
+from regworld.causal.graph import (
+    OUTCOME,
+    TREATMENT,
+    analyst_dag,
+    observed_adjustment_set,
+    true_dag,
+)
 from regworld.causal.refute import refute_audit
 from regworld.data.ingest import read_panel_analysis
 from regworld.logging_conf import get_logger, setup_logging
@@ -17,6 +23,47 @@ from regworld.seeding import seed_everything
 from regworld.types import validate_config
 
 log = get_logger(__name__)
+
+
+def _identifiability_report(panel: object) -> dict[str, object]:
+    """PLAN 5b — 'report both': run identify_effect on the analyst AND true DAGs.
+
+    Reports the raw DoWhy verdict on each graph plus the honest interpretation.
+    The subtlety this DGP plants (§7.7): capacity ``z`` does *not* cause the
+    treatment — the confounding runs ``size -> audited`` and ``size -> z ->
+    compliant_next``, so conditioning on size symbolically closes the backdoor and
+    DoWhy declares BOTH DAGs identifiable. That symbolic success is the real trap:
+    the panel carries only the coarse ``size_decile``, a proxy for the continuous
+    size the confounding actually flows through, so the "identified" estimand is
+    still biased (the four-number gate and the E-value quantify how much).
+    """
+    from regworld.causal.refute import _dowhy_frame, _ensure_dowhy_networkx_compat
+
+    _ensure_dowhy_networkx_compat()
+    from dowhy import CausalModel
+
+    pdf = _dowhy_frame(panel)  # type: ignore[arg-type]
+
+    def _has_backdoor(graph_gml: str) -> bool:
+        try:
+            model = CausalModel(data=pdf, treatment=TREATMENT, outcome=OUTCOME, graph=graph_gml)
+            estimand = model.identify_effect(proceed_when_unidentifiable=False)
+            backdoor = getattr(estimand, "estimands", {}).get("backdoor")
+            return bool(backdoor and backdoor.get("estimand") is not None)
+        except Exception:  # dowhy raises when the effect is not identifiable
+            return False
+
+    return {
+        "analyst_dag_identifiable": _has_backdoor(analyst_dag()),
+        "true_dag_identifiable": _has_backdoor(true_dag()),
+        "note": (
+            "DoWhy conditions on size_decile and declares both DAGs identifiable — "
+            "the trap. Structural identifiability does not imply unbiasedness here: "
+            "size_decile is a coarsening of the continuous size the confounding runs "
+            "through, so the identified audit estimand stays biased (see the "
+            "four-number gate and the E-value / add-unobserved-common-cause sweep)."
+        ),
+    }
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")
@@ -41,6 +88,7 @@ def main(cfg: DictConfig) -> None:
     )
     payload = {
         "adjustment_set": observed_adjustment_set(),
+        "identifiability": _identifiability_report(panel),
         "naive_logit_audit": asdict(naive),
         "dml_audit_observed": asdict(dml_a),
         "dml_onset": asdict(dml_o),

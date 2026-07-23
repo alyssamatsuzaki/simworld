@@ -24,6 +24,11 @@ class RefutationReport:
     random_common_cause_effect: float
     subset_effect: float
     e_value: float
+    # add-unobserved-common-cause (5d): the confounding strength at which the
+    # biased estimate first crosses zero. Small = the estimate is fragile to a
+    # modest unobserved confounder, which is the correct diagnosis of the trap.
+    # None if the estimate never crosses within the swept range.
+    unobserved_zero_crossing: float | None = None
 
 
 def _ensure_dowhy_networkx_compat() -> None:
@@ -77,6 +82,7 @@ def refute_audit(
     estimate = model.estimate_effect(
         estimand,
         method_name="backdoor.linear_regression",
+        test_significance=True,
     )
     point = float(estimate.value)
 
@@ -97,11 +103,78 @@ def refute_audit(
         num_simulations=20,
         random_seed=seed,
     )
-    ci_low = point - 1.959964 * abs(point) * 0.1
+    crossing = _unobserved_zero_crossing(model, estimand, estimate, point, seed=seed)
+    ci_low = _estimate_ci_low(estimate, point)
     return RefutationReport(
         estimate=point,
         placebo_effect=placebo,
         random_common_cause_effect=rcc,
         subset_effect=subset,
         e_value=_e_value(point, ci_low),
+        unobserved_zero_crossing=crossing,
     )
+
+
+def _estimate_ci_low(estimate: object, point: float) -> float:
+    """Lower 95% confidence bound from DoWhy's own linear-regression inference.
+
+    Falls back to a normal-approximation bound from the reported standard error,
+    and only as a last resort to a wide heuristic — the E-value must reflect the
+    estimate's real precision, not a fabricated interval.
+    """
+    try:
+        ci = estimate.get_confidence_intervals(confidence_level=0.95)  # type: ignore[attr-defined]
+        low = float(np.asarray(ci, dtype=np.float64).ravel()[0])
+        if np.isfinite(low):
+            return low
+    except Exception:
+        pass
+    try:
+        se = float(np.asarray(estimate.get_standard_error()).ravel()[0])  # type: ignore[attr-defined]
+        if np.isfinite(se) and se > 0:
+            return point - 1.959964 * se
+    except Exception:
+        pass
+    return point - 1.959964 * abs(point) * 0.5
+
+
+def _unobserved_zero_crossing(
+    model: object,
+    estimand: object,
+    estimate: object,
+    point: float,
+    *,
+    seed: int,
+    strengths: tuple[float, ...] = (0.0, 0.01, 0.02, 0.05, 0.1, 0.15, 0.2, 0.3),
+) -> float | None:
+    """Sweep add-unobserved-common-cause strength; return where the effect hits 0.
+
+    PLAN 5d's informative refuter: a confounder correlated with both treatment
+    and outcome at strength ``k`` shifts the biased DML/regression estimate. The
+    strength at which it first crosses zero measures how fragile the estimate is
+    to exactly the unmeasured capacity confounder we planted. Runs on the same
+    analyst DAG; a symmetric (treatment, outcome) effect strength is swept.
+    """
+    prev_effect, prev_k = point, 0.0
+    for k in strengths:
+        if k == 0.0:
+            continue
+        try:
+            result = model.refute_estimate(  # type: ignore[attr-defined]
+                estimand,
+                estimate,
+                method_name="add_unobserved_common_cause",
+                effect_fraction_on_treatment=k,
+                effect_fraction_on_outcome=k,
+            )
+            shifted = float(np.mean(np.asarray(result.new_effect, dtype=np.float64)))
+        except Exception:
+            return None
+        if shifted == 0.0 or np.sign(shifted) != np.sign(point):
+            if prev_effect == shifted:
+                return float(k)
+            # Linear interpolation of the crossing strength between prev_k and k.
+            frac = prev_effect / (prev_effect - shifted)
+            return float(prev_k + (k - prev_k) * frac)
+        prev_effect, prev_k = shifted, k
+    return None

@@ -155,7 +155,16 @@ def train_world_model(
         template=template,
         initial=initial,
         aggregate_names=datamodule.aggregate_names(cfg),
-        extras={"train_steps": steps, "seed": cfg.seed, "profile": cfg.profile_name},
+        extras={
+            "train_steps": steps,
+            "seed": cfg.seed,
+            "profile": cfg.profile_name,
+            # Firm count the emulator was trained at: EmulatorEnv and the
+            # sensitivity policy search need it to size rollouts. Persisted here so
+            # consumers read it from the checkpoint instead of re-deriving it from
+            # the initial frame (a warning path) or silently injecting cfg values.
+            "n_firms": int(cfg.population.n_firms),
+        },
     )
     summary = out.parent / "train_summary.json"
     summary.write_text(json.dumps({"metrics": metrics, "history": history}, indent=2))

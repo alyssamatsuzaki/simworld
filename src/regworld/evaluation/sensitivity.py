@@ -66,10 +66,8 @@ def evaluate(cfg: RegWorldConfig) -> dict[str, object]:
     log.info("Sobol: evaluating %d design points in emulator", len(samples))
 
     model, meta = load_checkpoint(checkpoint_path(cfg.paths.root, cfg.emulator.arch))
-    if "extras" not in meta:
-        meta["extras"] = {}
-    if "n_firms" not in meta["extras"]:
-        meta["extras"]["n_firms"] = cfg.population.n_firms
+    # n_firms is read from the checkpoint extras by EmulatorEnv (train_emulator.py
+    # writes it); its initial-frame fallback covers pre-n_firms checkpoints.
     env = EmulatorEnv(cfg, model=model, meta=meta)
 
     outputs = []
