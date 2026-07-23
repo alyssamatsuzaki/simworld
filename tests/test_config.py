@@ -39,6 +39,11 @@ def test_default_composition_validates() -> None:
 def test_profile_wins_on_size_knobs() -> None:
     smoke = validate_config(compose_cfg("profile=smoke"))
     assert smoke.population.n_firms == 200  # profile overrides population/base's 2000
+    # every profile pins its §6 column explicitly, so it wins over any population group
+    dev = validate_config(compose_cfg("profile=dev", "population=small"))
+    assert dev.population.n_firms == 2000
+    full = validate_config(compose_cfg("profile=full", "population=small"))
+    assert full.population.n_firms == 20000
 
 
 def test_wellspecified_disables_both_confounds() -> None:

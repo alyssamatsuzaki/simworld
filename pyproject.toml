@@ -31,7 +31,7 @@ dev    = ["pytest>=8.2", "pytest-cov>=5.0", "pytest-xdist>=3.6", "hypothesis>=6.
           "ruff>=0.5", "mypy>=1.10", "pre-commit>=3.7", "types-PyYAML"]
 gpu    = []                                             # install CUDA torch via index-url in Docker.cuda
 tensor = ["agent-torch>=0.4"]                           # Stage 3b; pure-torch fallback if it won't install
-slurm  = ["hydra-submitit-launcher>=1.2"]
+slurm  = ["hydra-submitit-launcher>=1.2", "hydra-joblib-launcher>=1.2"]
 dvc    = ["dvc>=3.51"]
 
 [build-system]
@@ -66,4 +66,10 @@ warn_return_any = true
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
 markers = ["slow: long-running scientific gates"]
-filterwarnings = ["ignore::DeprecationWarning"]
+filterwarnings = [
+  "ignore::DeprecationWarning",
+  # configs/hydra/launcher/*.yaml intentionally carry the §6-mandated names, which shadow
+  # the launcher plugins' ConfigStore schemas; Hydra validates the yaml against the schema
+  # (good) but deprecation-warns about the auto-matching on every compose (noise).
+  "ignore:(?s).*validated against ConfigStore schema:UserWarning",
+]

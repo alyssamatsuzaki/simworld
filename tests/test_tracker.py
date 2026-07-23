@@ -4,15 +4,26 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from regworld.tracking import MlflowTracker, NullTracker
 
 
-def test_null_tracker_writes_nothing(tmp_path: Path) -> None:
+def test_null_tracker_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # cwd is the artifact dir the tracker would write into (mlruns/, wandb/, ...):
+    # after every Tracker-protocol call it must still be empty.
+    artifact_dir = tmp_path / "artifact_root"
+    artifact_dir.mkdir()
+    payload = tmp_path / "payload.txt"
+    payload.write_text("x")
+    monkeypatch.chdir(artifact_dir)
     t = NullTracker()
     t.start("run", {"a": 1})
-    t.log_metrics({"x": 1.0})
+    t.log_metrics({"x": 1.0}, step=1)
+    t.log_artifact(payload)
+    t.log_table([{"a": 1}], "table")
     t.finish()
-    assert list(tmp_path.iterdir()) == []
+    assert list(artifact_dir.iterdir()) == []
 
 
 def test_mlflow_tracker_writes_run(tmp_path: Path) -> None:

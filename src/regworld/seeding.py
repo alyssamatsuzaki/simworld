@@ -7,7 +7,6 @@ its own PRNGKey there. If JAX happens to be loaded already, its key helper is av
 
 from __future__ import annotations
 
-import os
 import random
 
 import numpy as np
@@ -19,7 +18,8 @@ def seed_everything(seed: int) -> np.random.Generator:
     Returns a `np.random.Generator` to be passed explicitly; no bare `np.random.*`
     calls are permitted anywhere in src/ (§13).
     """
-    os.environ["PYTHONHASHSEED"] = str(seed)
+    # PYTHONHASHSEED must exist before the interpreter starts to affect hashing, so it
+    # cannot be set here; the Makefile/CI `export PYTHONHASHSEED := 0` is what enforces it.
     random.seed(seed)
     np.random.seed(seed)  # noqa: NPY002 - deliberately seeds legacy global state for 3rd-party libs
     try:
