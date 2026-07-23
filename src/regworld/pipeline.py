@@ -58,6 +58,10 @@ STAGE_ORDER: list[tuple[str, list[str]]] = [
     ("rl", ["seed", "rl", "objective", "emulator"]),
     ("ensemble", ["seed", "seeds", "ensemble", "objective", "emulator"]),
     ("sensitivity", ["seed", "sensitivity", "emulator"]),
+    # The §11 evaluation suite writes reports/eval/metrics.json, which figures
+    # 2/5/7/12/13 read; it must run after rl/ensemble/sensitivity so its planning
+    # and sensitivity families see their inputs.
+    ("evaluation", ["seed", "eval", "emulator"]),
     ("figures", []),  # always cheap; re-run every time
     ("report", []),
 ]
@@ -75,6 +79,7 @@ HARD_DEPS: dict[str, list[str]] = {
     "rl": ["emulator"],
     "ensemble": ["emulator"],
     "sensitivity": ["emulator"],
+    "evaluation": ["emulator"],
 }
 
 _NEVER_CACHE = {"recon", "figures", "report"}

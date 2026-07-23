@@ -40,6 +40,9 @@ STAGE_SCRIPTS: dict[str, tuple[tuple[str, ...], str | None]] = {
     "rl": (("train_rl.py",), "rl"),
     "ensemble": (("run_ensemble.py",), "rl"),
     "sensitivity": (("sensitivity.py",), "opt"),
+    # The §11 eval suite spans families that need bayes/causal/rl/opt at once, so
+    # its isolated venv gets every extra ("all") rather than a single group.
+    "evaluation": (("eval_emulator.py",), "all"),
     "figures": (("make_figures.py",), "app"),
     "report": (("build_report.py",), None),
 }
@@ -52,10 +55,13 @@ def _sync_group_env(group: str, env: dict[str, str]) -> None:
     """Create/refresh the per-group venv once per group per process (isolated mode)."""
     if group in _SYNCED_GROUPS:
         return
-    cmd = ["uv", "sync", "--extra", "dev"]
-    if group != "core":
-        cmd += ["--extra", group]
-    cmd.append("-q")
+    if group == "all":
+        cmd = ["uv", "sync", "--all-extras", "-q"]
+    else:
+        cmd = ["uv", "sync", "--extra", "dev"]
+        if group != "core":
+            cmd += ["--extra", group]
+        cmd.append("-q")
     log.info("subprocess: %s", " ".join(cmd))
     subprocess.run(cmd, check=True, env=env)
     _SYNCED_GROUPS.add(group)
@@ -400,6 +406,37 @@ def stage_sensitivity(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
     tracker.log_metrics({"sensitivity_optuna_best_J": float(optuna_result["best_J"])})  # type: ignore[arg-type]
 
     return [result.indices, result.summary, optuna_path]
+
+
+def stage_evaluation(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
+    """§11 evaluation suite: run every metric family, write reports/eval/metrics.json.
+
+    Runs ``scripts/eval_emulator.py`` as a subprocess (it loads torch + the whole
+    evaluation package); its metrics.json is what figures 2/5/7/12/13 read, so
+    wiring it into the driver is what makes a clean `make smoke`/`make all`
+    produce all 13 figures rather than 8.
+
+    The script exits nonzero if any family raises (the right behavior for the
+    standalone gate). Here, because it writes metrics.json before exiting, a
+    partial run is DEGRADED, not FAILED: figures use the families that succeeded
+    and the eval report records which failed. A run that never wrote metrics.json
+    is a real failure and propagates.
+    """
+    from regworld.pipeline import Degraded
+
+    metrics = Path(cfg.paths.reports) / "eval" / "metrics.json"
+    try:
+        _run_script(cfg, "eval_emulator.py", group="all")
+    except subprocess.CalledProcessError as exc:
+        if not metrics.is_file():
+            raise
+        raise Degraded(
+            "evaluation suite: some metric families failed (see reports/eval/report.md)",
+            outputs=[str(metrics)],
+        ) from exc
+    if metrics.is_file():
+        tracker.log_artifact(metrics, "eval_metrics")
+    return [metrics] if metrics.is_file() else []
 
 
 def stage_figures(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:

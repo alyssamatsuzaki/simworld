@@ -38,6 +38,7 @@ class StagesCfg(_Cfg):
     rl: bool = False
     ensemble: bool = False
     sensitivity: bool = False
+    evaluation: bool = False
     figures: bool = False
     report: bool = False
 

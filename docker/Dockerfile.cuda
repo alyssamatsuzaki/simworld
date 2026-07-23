@@ -19,7 +19,9 @@ RUN useradd -m -u 1000 rw
 WORKDIR /work
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev
+# All extras: the pipeline needs bayes/causal/rl/opt/app and `make smoke` runs
+# the slow (dev) tests; a --no-dev core-only sync cannot run the image's workload.
+RUN uv sync --frozen --all-extras
 # CUDA torch replaces the CPU wheel; keep in sync with torch floor in pyproject.toml
 RUN uv pip install --index-url https://download.pytorch.org/whl/cu124 "torch>=2.4" --reinstall-package torch
 
