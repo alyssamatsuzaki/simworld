@@ -14,6 +14,7 @@ from regworld.rules import Constants, PolicyLevers, QuarterOutcome, regulator_re
 from regworld.types import RegWorldConfig
 
 from .abm_env import (
+    BUDGET_EXHAUSTED_QUARTER_FRACTION,
     ModelFactory,
     RegulationBackend,
     _default_model_factory,
@@ -156,6 +157,11 @@ class RegulationMARLEnv(ParallelEnv):
         capacity = max(self.cfg.horizon_quarters * constants.audit_budget * self.model.firms.n, 1.0)
         return max(0.0, 1.0 - self._cumulative_audits / capacity)
 
+    def _budget_exhausted(self) -> bool:
+        """Remaining horizon budget below 5% of one quarter's maximum audits."""
+        remaining_quarters = self._budget_remaining() * self.cfg.horizon_quarters
+        return remaining_quarters < BUDGET_EXHAUSTED_QUARTER_FRACTION
+
     def _collapsed(self) -> bool:
         if self._outcome is None:
             return False
@@ -164,7 +170,7 @@ class RegulationMARLEnv(ParallelEnv):
             or (
                 self._elapsed > 12
                 and self._outcome.compliance_rate < 0.05
-                and self._budget_remaining() <= 0.0
+                and self._budget_exhausted()
             )
         )
 

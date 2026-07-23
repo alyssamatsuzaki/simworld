@@ -74,17 +74,12 @@ class FourNumbers:
 
 def load_calibrated_theta(cfg: RegWorldConfig) -> tuple[Theta, float, float]:
     """Posterior-mean Theta from Stage 4's combined posterior, plus (q0, q1)."""
-    import arviz as az
+    from regworld.calibration.posterior import posterior_mean_theta, posterior_path
 
-    path = Path(cfg.paths.root) / "calibration" / "posterior.nc"
+    path = posterior_path(cfg)
     if not path.is_file():
         raise FileNotFoundError(f"calibrated posterior not found: {path}; run `make calibrate`")
-    idata = az.from_netcdf(path)
-    means: dict[str, float] = {}
-    for name in idata.posterior.data_vars:
-        if name in Theta.__dataclass_fields__:
-            means[name] = float(np.asarray(idata.posterior[name]).mean())
-    theta = Theta(**means)  # beta_capacity stays 0.0: latent z is never fitted
+    theta = posterior_mean_theta(path)  # beta_capacity stays 0.0: latent z is never fitted
     return theta, theta.q0, theta.q1
 
 

@@ -84,7 +84,9 @@ def load_theta_draws(cfg: RegWorldConfig) -> np.ndarray:
     """
     import arviz as az
 
-    path = Path(cfg.paths.root) / "calibration" / "posterior.nc"
+    from regworld.calibration.posterior import posterior_path
+
+    path = posterior_path(cfg)
     if not path.is_file():
         raise FileNotFoundError(f"calibrated posterior not found: {path}; run `make calibrate`")
     idata = az.from_netcdf(path)
@@ -246,8 +248,11 @@ def collect_episode(
             aggregate_to_outcome(agg, firms.n), baseline, weights, const, firms.n
         )
         cumulative_audits += n_audits
-        budget_remaining = 1.0 - cumulative_audits / max_audits
-        collapsed = agg[5] > 0.40 or (t > 12 and agg[0] < 0.05 and budget_remaining <= 0.0)
+        budget_remaining = max(0.0, 1.0 - cumulative_audits / max_audits)
+        # Same exhaustion rule as the envs: remaining horizon budget below 5%
+        # of one quarter's maximum audits (see abm_env.BUDGET_EXHAUSTED_QUARTER_FRACTION).
+        exhausted = budget_remaining * cfg.horizon_quarters < 0.05
+        collapsed = agg[5] > 0.40 or (t > 12 and agg[0] < 0.05 and exhausted)
         if collapsed:
             cont_arr[t] = 0.0
         prev_revenue = revenue

@@ -41,7 +41,23 @@ DGP_IMPORT = re.compile(
 DGP_DYNAMIC = re.compile(
     r"(?:\bimport_module|\b__import__)\s*\([^)]*(?:regworld\.dgp|['\"]\s*\.?dgp\b)"
 )
-ORACLE_REF = re.compile(r"oracle", re.IGNORECASE)
+# The oracle FIREWALL guards *access* to the `artifacts/oracle/` tree, not the
+# English word: PLAN.md itself names AbmEnv "the oracle" (§10 Stage 8, §11
+# family 5), so estimated-side modules legitimately say "oracle" in prose. What
+# must never appear outside the allowlist is oracle *access* — the guarded
+# accessor `read_oracle`, or the tree's path component in a string/path literal
+# (`"oracle"`, `oracle/`, `.oracle`, an `oracle_`/`_oracle` identifier). Match
+# those identifier/path forms; let prose ("the env oracle") pass. The runtime
+# stack-frame check in `store.read_oracle` remains the backstop for exotic forms.
+ORACLE_REF = re.compile(
+    r"""['"/]oracle\b     # "oracle" / 'oracle / /oracle  — string or path literal
+      | \boracle['"/]      # oracle" / oracle' / oracle/   — path segment
+      | \.oracle\b         # .oracle                       — attribute access
+      | _oracle\b          # read_oracle, load_oracle      — accessor identifier
+      | \boracle_          # oracle_dir, oracle_path        — accessor identifier
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 DGP_ALLOWED = {
     "dgp",  # the package itself
@@ -140,6 +156,26 @@ def test_firewall_regexes_catch_known_evasions() -> None:
     for snippet in innocents:
         assert not DGP_IMPORT.search(snippet), f"false positive (import): {snippet!r}"
         assert not DGP_DYNAMIC.search(snippet), f"false positive (dynamic): {snippet!r}"
+
+    # ORACLE_REF must catch oracle *access* forms...
+    oracle_access = [
+        'store.read_oracle("theta_star")',
+        'Path(root) / "oracle" / "theta_star.json"',
+        "root / 'oracle' / name",
+        "artifacts/oracle/regime_p_full.parquet",
+        "cfg.paths.oracle",
+        "oracle_dir = root / 'oracle'",
+    ]
+    for snippet in oracle_access:
+        assert ORACLE_REF.search(snippet), f"oracle firewall missed access: {snippet!r}"
+    # ...while letting PLAN's prose vocabulary for AbmEnv pass (it is "the oracle").
+    oracle_prose = [
+        "the env oracle falls back to prior-center Theta()",
+        "AbmEnv is the oracle that grades RL policies (PLAN §11 family 5)",
+        "# the environment oracle factory binds posterior-mean theta",
+    ]
+    for snippet in oracle_prose:
+        assert not ORACLE_REF.search(snippet), f"oracle firewall false positive: {snippet!r}"
 
 
 def test_estimated_theta_defaults_do_not_reveal_answer_key() -> None:

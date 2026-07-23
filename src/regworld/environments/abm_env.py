@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable, Mapping
+from pathlib import Path
 from typing import Any, Protocol, cast
 
 import gymnasium as gym
@@ -15,6 +17,7 @@ from regworld.rules import (
     PolicyLevers,
     QuarterOutcome,
     SegmentAttributes,
+    Theta,
     WorldState,
     hhi,
     regulator_reward,
@@ -26,6 +29,13 @@ from .wrappers import (
     flat_observation_space,
     regulator_action_space,
 )
+
+log = logging.getLogger(__name__)
+
+# Fraction of one quarter's maximum audit budget below which the remaining
+# horizon budget counts as exhausted for the collapse test (§10 Stage 8): the
+# regulator cannot fund even a token 5%-of-normal quarter again.
+BUDGET_EXHAUSTED_QUARTER_FRACTION = 0.05
 
 
 class RegulationBackend(Protocol):
@@ -46,13 +56,57 @@ class RegulationBackend(Protocol):
 
 ModelFactory = Callable[[RegWorldConfig, int], RegulationBackend]
 
+# Posterior-mean thetas cached per (posterior path, mtime): one arviz load per
+# artifact, not one per env reset. The warn-set keeps the prior-center fallback
+# to a single WARNING per missing artifact path.
+_THETA_CACHE: dict[tuple[str, int], Theta] = {}
+_WARNED_PRIOR_CENTER: set[str] = set()
+
+
+def _load_posterior_mean_theta(path: Path) -> Theta:
+    from regworld.calibration.posterior import posterior_mean_theta
+
+    return posterior_mean_theta(path)
+
+
+def _default_theta(cfg: RegWorldConfig) -> Theta | None:
+    """Posterior-mean Theta when Stage 4 has calibrated one, else None.
+
+    PLAN Stage 3: the ABM behind the env is "parameterized by *estimated*
+    values" — the oracle that grades RL policies and the exploitation gap must
+    run at the calibrated parameters the emulator was trained around, falling
+    back to prior-center ``Theta()`` (with one warning) before calibration ran.
+    """
+    from regworld.calibration.posterior import posterior_path
+
+    path = posterior_path(cfg)
+    key = str(path)
+    if not path.is_file():
+        if key not in _WARNED_PRIOR_CENTER:
+            _WARNED_PRIOR_CENTER.add(key)
+            log.warning(
+                "calibrated posterior missing at %s; env oracle falls back to "
+                "prior-center Theta() (run `make calibrate` for estimated values)",
+                path,
+            )
+        return None
+    cache_key = (key, path.stat().st_mtime_ns)
+    if cache_key not in _THETA_CACHE:
+        _THETA_CACHE[cache_key] = _load_posterior_mean_theta(path)
+    return _THETA_CACHE[cache_key]
+
 
 def _default_model_factory(cfg: RegWorldConfig, seed: int) -> RegulationBackend:
     from regworld.abm.model import RegulationModel, load_observed_world
 
     return cast(
         RegulationBackend,
-        RegulationModel(cfg, world=load_observed_world(cfg, seed=seed), seed=seed),
+        RegulationModel(
+            cfg,
+            world=load_observed_world(cfg, seed=seed),
+            theta=_default_theta(cfg),
+            seed=seed,
+        ),
     )
 
 
@@ -141,6 +195,11 @@ class AbmEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
         capacity = max(self.cfg.horizon_quarters * constants.audit_budget * self.model.firms.n, 1.0)
         return max(0.0, 1.0 - self._cumulative_audits / capacity)
 
+    def _budget_exhausted(self) -> bool:
+        """Remaining horizon budget below 5% of one quarter's maximum audits."""
+        remaining_quarters = self._budget_remaining() * self.cfg.horizon_quarters
+        return remaining_quarters < BUDGET_EXHAUSTED_QUARTER_FRACTION
+
     def _collapsed(self) -> bool:
         if self._outcome is None:
             return False
@@ -149,16 +208,19 @@ class AbmEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
             or (
                 self._elapsed > 12
                 and self._outcome.compliance_rate < 0.05
-                and self._budget_remaining() <= 0.0
+                and self._budget_exhausted()
             )
         )
 
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[NDArray[np.float32], dict[str, Any]]:
+        # Gymnasium convention: seed=None continues the env RNG stream (fresh
+        # episode noise per auto-reset); an explicit seed re-pins it so
+        # reset(seed=k) twice replays the identical episode.
         super().reset(seed=seed)
         del options
-        model_seed = self.cfg.seed if seed is None else seed
+        model_seed = int(seed) if seed is not None else int(self.np_random.integers(0, 2**31 - 1))
         self.model = self._model_factory(self.cfg, model_seed)
         self._baseline = _model_baseline(self.model)
         self._outcome = self._baseline

@@ -150,21 +150,28 @@ class EmulatorEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
         return max((1.0 - float(self._aggregates[_EXIT_INDEX])) * self._n_firms, 1.0)
 
     def _collapsed(self) -> bool:
+        from .abm_env import BUDGET_EXHAUSTED_QUARTER_FRACTION
+
         const = Constants()
         max_audits = max(self.cfg.horizon_quarters * const.audit_budget * self._n_firms, 1.0)
-        budget_remaining = 1.0 - self._cumulative_audits / max_audits
+        budget_remaining = max(0.0, 1.0 - self._cumulative_audits / max_audits)
+        # Exhausted: remaining horizon budget below 5% of one quarter's maximum.
+        exhausted = budget_remaining * self.cfg.horizon_quarters < BUDGET_EXHAUSTED_QUARTER_FRACTION
         return bool(
             self._aggregates[_EXIT_INDEX] > 0.40
-            or (self._elapsed > 12 and self._aggregates[0] < 0.05 and budget_remaining <= 0.0)
+            or (self._elapsed > 12 and self._aggregates[0] < 0.05 and exhausted)
         )
 
     # ------------------------------------------------------------------- API
     def reset(
         self, *, seed: int | None = None, options: dict[str, Any] | None = None
     ) -> tuple[NDArray[np.float32], dict[str, Any]]:
+        # Gymnasium convention: seed=None continues the env RNG stream (fresh
+        # imagination noise per auto-reset); an explicit seed re-pins it so
+        # reset(seed=k) twice replays the identical episode.
         super().reset(seed=seed)
         del options
-        env_seed = self.cfg.seed if seed is None else seed
+        env_seed = int(seed) if seed is not None else int(self.np_random.integers(0, 2**31 - 1))
         self._generator.manual_seed(env_seed)
         self._state = self.model.initial_state(
             self._initial["firm"].unsqueeze(0),
