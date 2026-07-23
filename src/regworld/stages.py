@@ -5,6 +5,13 @@ Raise `regworld.pipeline.Degraded(note)` for an honest partial result.
 Heavy imports stay inside the functions: the driver process must not pay for
 (or conflict with) libraries a disabled stage would have used. Calibration is
 always launched as a subprocess so JAX never enters this process (§5).
+
+`isolated_envs=true` (§5 fallback): the driver routes every script-backed stage
+in STAGE_SCRIPTS through `uv run` inside a per-extras-group venv
+(`.venv-<group>`, group "core" when the stage needs no extra), synced once per
+group per process. Stages with no script entry point — recon, tensorized_abm,
+envs, marl — are pure-core checks and always run in-process regardless: the
+driver's own core venv is exactly the environment they need.
 """
 
 from __future__ import annotations
@@ -14,6 +21,7 @@ import logging
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from regworld.tracking import Tracker
@@ -21,22 +29,87 @@ from regworld.types import RegWorldConfig
 
 log = logging.getLogger(__name__)
 
+# Stage name -> (script entry points, run in order; uv extras group, None = core-only).
+STAGE_SCRIPTS: dict[str, tuple[tuple[str, ...], str | None]] = {
+    "data": (("generate_world.py", "make_data.py"), None),
+    "graphs": (("build_graphs.py",), None),
+    "abm": (("run_abm.py",), None),
+    "calibration": (("calibrate.py",), "bayes"),
+    "causal": (("causal_analysis.py", "validate_simulator.py"), "causal"),
+    "emulator": (("train_emulator.py",), None),
+    "rl": (("train_rl.py",), "rl"),
+    "ensemble": (("run_ensemble.py",), "rl"),
+    "sensitivity": (("sensitivity.py",), "opt"),
+    # The §11 eval suite spans families that need bayes/causal/rl/opt at once, so
+    # its isolated venv gets every extra ("all") rather than a single group.
+    "evaluation": (("eval_emulator.py",), "all"),
+    "figures": (("make_figures.py",), "app"),
+    "report": (("build_report.py",), None),
+}
+
+# Extras groups whose isolated venv has already been `uv sync`ed in this process.
+_SYNCED_GROUPS: set[str] = set()
+
+
+def _sync_group_env(group: str, env: dict[str, str]) -> None:
+    """Create/refresh the per-group venv once per group per process (isolated mode)."""
+    if group in _SYNCED_GROUPS:
+        return
+    if group == "all":
+        cmd = ["uv", "sync", "--all-extras", "-q"]
+    else:
+        cmd = ["uv", "sync", "--extra", "dev"]
+        if group != "core":
+            cmd += ["--extra", group]
+        cmd.append("-q")
+    log.info("subprocess: %s", " ".join(cmd))
+    subprocess.run(cmd, check=True, env=env)
+    _SYNCED_GROUPS.add(group)
+
 
 def _run_script(
     cfg: RegWorldConfig,
     script: str,
     extra_overrides: list[str] | None = None,
     env: dict[str, str] | None = None,
+    group: str | None = None,
 ) -> None:
-    """Run a stage script as a subprocess with the current profile (JAX isolation, §5)."""
-    cmd = [sys.executable, f"scripts/{script}", f"profile={cfg.profile_name}"]
-    cmd += extra_overrides or []
+    """Run a stage script as a subprocess with the current profile (JAX isolation, §5).
+
+    With `cfg.isolated_envs` the script runs via `uv run --no-sync` inside the
+    per-group venv `.venv-<group>` ("core" when `group` is None), synced first
+    via `_sync_group_env`; otherwise it runs under the current interpreter.
+    """
     full_env = dict(os.environ)
     full_env.setdefault("JAX_PLATFORMS", "cpu")
     full_env.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
     full_env.update(env or {})
+    overrides = [f"profile={cfg.profile_name}", *(extra_overrides or [])]
+    if cfg.isolated_envs:
+        group_name = group or "core"
+        full_env["UV_PROJECT_ENVIRONMENT"] = f".venv-{group_name}"
+        _sync_group_env(group_name, full_env)
+        cmd = ["uv", "run", "--no-sync", "python", f"scripts/{script}", *overrides]
+    else:
+        cmd = [sys.executable, f"scripts/{script}", *overrides]
     log.info("subprocess: %s", " ".join(cmd))
     subprocess.run(cmd, check=True, env=full_env)
+
+
+def isolated_stage(name: str) -> Callable[[RegWorldConfig, Tracker], list[Path]]:
+    """Stage callable running `name`'s scripts in their per-group venv (§5 fallback).
+
+    Isolated stages communicate through files on disk only (§5); they return no
+    output paths, so the driver re-runs them rather than CACHED-skipping.
+    """
+    scripts, group = STAGE_SCRIPTS[name]
+
+    def run(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
+        for script in scripts:
+            _run_script(cfg, script, group=group)
+        return []
+
+    return run
 
 
 def stage_recon(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
@@ -145,7 +218,7 @@ def stage_tensorized_abm(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
 
 def stage_calibration(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
     """Stage 4: launch JAX inference out of process and register its artifacts."""
-    _run_script(cfg, "calibrate.py")
+    _run_script(cfg, "calibrate.py", group="bayes")
     output_dir = Path(cfg.paths.root) / "calibration"
     manifest_path = output_dir / "calibration_manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -166,7 +239,7 @@ def stage_causal(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
     from regworld.causal.gate import run_gate, write_gate_outputs
     from regworld.pipeline import Degraded
 
-    _run_script(cfg, "causal_analysis.py")
+    _run_script(cfg, "causal_analysis.py", group="causal")
     estimates_path = Path(cfg.paths.root) / "causal" / "causal_estimates.json"
     estimates = json.loads(estimates_path.read_text())
     result = run_gate(cfg)
@@ -333,6 +406,37 @@ def stage_sensitivity(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
     tracker.log_metrics({"sensitivity_optuna_best_J": float(optuna_result["best_J"])})  # type: ignore[arg-type]
 
     return [result.indices, result.summary, optuna_path]
+
+
+def stage_evaluation(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
+    """§11 evaluation suite: run every metric family, write reports/eval/metrics.json.
+
+    Runs ``scripts/eval_emulator.py`` as a subprocess (it loads torch + the whole
+    evaluation package); its metrics.json is what figures 2/5/7/12/13 read, so
+    wiring it into the driver is what makes a clean `make smoke`/`make all`
+    produce all 13 figures rather than 8.
+
+    The script exits nonzero if any family raises (the right behavior for the
+    standalone gate). Here, because it writes metrics.json before exiting, a
+    partial run is DEGRADED, not FAILED: figures use the families that succeeded
+    and the eval report records which failed. A run that never wrote metrics.json
+    is a real failure and propagates.
+    """
+    from regworld.pipeline import Degraded
+
+    metrics = Path(cfg.paths.reports) / "eval" / "metrics.json"
+    try:
+        _run_script(cfg, "eval_emulator.py", group="all")
+    except subprocess.CalledProcessError as exc:
+        if not metrics.is_file():
+            raise
+        raise Degraded(
+            "evaluation suite: some metric families failed (see reports/eval/report.md)",
+            outputs=[str(metrics)],
+        ) from exc
+    if metrics.is_file():
+        tracker.log_artifact(metrics, "eval_metrics")
+    return [metrics] if metrics.is_file() else []
 
 
 def stage_figures(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:

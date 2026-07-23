@@ -1,0 +1,3 @@
+# Hydra's default in-process serial launcher, spelled out so `hydra/launcher=basic`
+# is an explicit, documented choice (§6, §12).
+_target_: hydra._internal.core_plugins.basic_launcher.BasicLauncher

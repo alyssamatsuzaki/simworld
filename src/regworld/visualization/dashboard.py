@@ -119,20 +119,27 @@ def _policy_fan(
     action: np.ndarray,
     n_seeds: int,
     horizon: int,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Roll the emulator forward under a constant action for several seeds.
 
-    Returns (compliance, hhi), each ``(n_seeds, horizon)`` in natural units.
+    Returns (compliance, hhi, terminal_aggregates): the first two are
+    ``(n_seeds, horizon)`` in natural units; the third is the per-seed FULL
+    terminal aggregate row ``(n_seeds, aggregate_dim)`` so the caller can build a
+    real terminal outcome (including consumer surplus, which the backfire flag
+    needs — copying the baseline CS would make the CS-down leg impossible to fire).
     """
     from regworld.environments.emulator_env import EmulatorEnv
 
     env = EmulatorEnv(cfg, model=model, meta=meta)
     compliance = np.zeros((n_seeds, horizon), dtype=np.float64)
     hhi = np.zeros((n_seeds, horizon), dtype=np.float64)
+    agg_dim = np.asarray(meta["initial"]["aggregate"], dtype=np.float64).size
+    terminal_aggs = np.full((n_seeds, agg_dim), np.nan, dtype=np.float64)
     action32 = action.astype(np.float32)
     for s in range(n_seeds):
         env.reset(seed=cfg.seed + 90_000 + s)
         terminated = truncated = False
+        last_agg = np.asarray(meta["initial"]["aggregate"], dtype=np.float64)
         for t in range(horizon):
             if terminated or truncated:
                 compliance[s, t] = compliance[s, t - 1] if t > 0 else np.nan
@@ -142,8 +149,10 @@ def _policy_fan(
             aggregates = np.asarray(env._aggregates, dtype=np.float64)
             compliance[s, t] = aggregates[0]
             hhi[s, t] = aggregates[2]
+            last_agg = aggregates
+        terminal_aggs[s] = last_agg
     env.close()
-    return compliance, hhi
+    return compliance, hhi, terminal_aggs
 
 
 def _pareto_points(cfg: RegWorldConfig) -> Any | None:
@@ -211,7 +220,9 @@ def main() -> None:  # pragma: no cover - exercised via `streamlit run`, not pyt
     st.caption(f"Prediction source: {lookup_kind}")
 
     horizon = cfg.horizon_quarters
-    compliance, hhi = _policy_fan(cfg, model, meta, action, n_seeds=n_seeds, horizon=horizon)
+    compliance, hhi, terminal_aggs = _policy_fan(
+        cfg, model, meta, action, n_seeds=n_seeds, horizon=horizon
+    )
     quarters = np.arange(1, horizon + 1)
 
     col_fan, col_side = st.columns([2, 1])
@@ -247,18 +258,24 @@ def main() -> None:  # pragma: no cover - exercised via `streamlit run`, not pyt
     terminal_hhi = float(np.nanmedian(hhi[:, -1]))
     n_firms = int(meta["extras"]["n_firms"])
     baseline_agg = np.asarray(meta["initial"]["aggregate"], dtype=np.float64)
-    terminal_agg = baseline_agg.copy()
-    terminal_agg[0] = terminal_compliance
-    terminal_agg[2] = terminal_hhi
+    # Full median terminal aggregate row from the rollout — carries the real
+    # terminal consumer surplus (index 4) and exit rate, so backfire's CS-down
+    # leg can actually fire instead of always seeing baseline CS.
+    terminal_agg = np.nanmedian(terminal_aggs, axis=0)
     terminal_outcome = aggregate_to_outcome(terminal_agg, n_firms)
     baseline_outcome = aggregate_to_outcome(baseline_agg, n_firms)
     is_backfire = backfire(terminal_outcome, baseline_outcome)
+    terminal_cs = float(terminal_agg[4])
 
     with col_side:
         st.subheader("Terminal outcome")
         st.metric("compliance rate", f"{terminal_compliance:.3f}")
         st.metric("HHI", f"{terminal_hhi:.1f}", delta=f"{terminal_hhi - baseline_agg[2]:+.1f}")
-        st.metric("consumer surplus (baseline)", f"{baseline_agg[4]:.3f}")
+        st.metric(
+            "consumer surplus",
+            f"{terminal_cs:.3f}",
+            delta=f"{terminal_cs - float(baseline_agg[4]):+.3f}",
+        )
         if is_backfire:
             st.error("BACKFIRE: compliance up, HHI up, consumer surplus down.")
         else:

@@ -12,7 +12,7 @@ help:            ## Show targets
 
 setup:           ## Install deps + hooks
 	uv sync --all-extras && $(RUN) pre-commit install
-setup-min:       ## Core + dev only (lint/typecheck/fast tests; NOT enough for the pipeline)
+setup-min:       ## Core + dev: lint/typecheck + core tests (optional-backend tests need `make setup`)
 	uv sync --extra dev && $(RUN) pre-commit install
 lock:            ## Refresh the lockfile
 	uv lock

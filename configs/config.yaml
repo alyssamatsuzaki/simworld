@@ -48,6 +48,7 @@ stages:                          # the driver reads this; any stage can be turne
   rl: true
   ensemble: true
   sensitivity: true
+  evaluation: true
   figures: true
   report: true
 

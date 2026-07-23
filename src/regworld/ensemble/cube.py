@@ -52,6 +52,21 @@ CellSpec = tuple[str, int, int]  # (policy name, posterior-draw index, seed inde
 # (mirrors the 256-episode threshold in training.datamodule.build_dataset).
 RAY_CELL_THRESHOLD = 256
 
+# The (policy, draw, seed, quarter, variable) Zarr cube's variable axis (§8).
+# Order is load-bearing: it is the `variable` coordinate written to Zarr and
+# read by the trajectory-fan figures and the dashboard.
+CUBE_VARIABLES: tuple[str, ...] = (
+    "compliance_rate",
+    "compliance_rate_weighted",
+    "hhi",
+    "mean_trust",
+    "consumer_surplus",
+    "exit_rate",
+    "enforcement_cost",
+    "reward",
+    "backfire",
+)
+
 
 def policy_id(name: str) -> str:
     """Stable hash of the policy name — the cube's ``policy`` coordinate (§8)."""
@@ -130,26 +145,46 @@ def _rollout_cell(
     action_fn: ActionFn,
     seed: int,
 ) -> dict[str, Any]:
-    """Roll one scenario-cube cell to horizon under a policy; return its terminal row."""
+    """Roll one scenario-cube cell to horizon under a policy.
+
+    Returns the terminal-outcome row plus, under ``_traj``, the per-quarter
+    ``(quarters, len(CUBE_VARIABLES))`` trajectory that feeds the Zarr cube.
+    """
     env = EmulatorEnv(cfg, model=model, meta=meta)
     obs, _ = env.reset(seed=seed)
+    n_firms = env.n_firms
+    baseline = aggregate_to_outcome(
+        np.asarray(meta["initial"]["aggregate"], dtype=np.float64), n_firms
+    )
     total_reward = 0.0
     terminated = truncated = False
     quarters = 0
+    trajectory: list[list[float]] = []
+    terminal = baseline
     while not (terminated or truncated):
         action = np.asarray(action_fn(obs), dtype=np.float32)
         obs, reward, terminated, truncated, _ = env.step(action)
         total_reward += float(reward)
         quarters += 1
+        # EmulatorEnv's Gym API only exposes a policy-learning observation, not
+        # the raw natural-unit aggregate row; its ``_aggregates`` instance
+        # attribute (set every step()) is the per-quarter state we record.
+        step_outcome = aggregate_to_outcome(np.asarray(env._aggregates, dtype=np.float64), n_firms)
+        trajectory.append(
+            [
+                step_outcome.compliance_rate,
+                step_outcome.compliance_rate_weighted,
+                step_outcome.hhi,
+                step_outcome.mean_trust,
+                step_outcome.consumer_surplus,
+                step_outcome.exit_rate_cum,
+                step_outcome.enforcement_cost,
+                float(reward),
+                float(backfire(step_outcome, baseline)),
+            ]
+        )
+        terminal = step_outcome
 
-    n_firms = env.n_firms
-    # EmulatorEnv's Gym API only exposes a policy-learning observation, not the
-    # raw natural-unit aggregate row; its ``_aggregates`` instance attribute
-    # (set every step()) is the terminal state we actually need here.
-    terminal = aggregate_to_outcome(np.asarray(env._aggregates, dtype=np.float64), n_firms)
-    baseline = aggregate_to_outcome(
-        np.asarray(meta["initial"]["aggregate"], dtype=np.float64), n_firms
-    )
     return {
         "compliance_rate": terminal.compliance_rate,
         "compliance_rate_weighted": terminal.compliance_rate_weighted,
@@ -162,6 +197,7 @@ def _rollout_cell(
         "backfire": bool(backfire(terminal, baseline)),
         "collapsed": bool(terminated),
         "quarters": quarters,
+        "_traj": trajectory,
     }
 
 
@@ -245,29 +281,78 @@ def _run_cells_ray(
 
 def build_cube(
     cfg: RegWorldConfig, model: WorldModel, meta: dict[str, Any]
-) -> tuple[pl.DataFrame, dict[str, str]]:
-    """Build the ``(policy x posterior-draw x seed)`` terminal-outcome scenario cube."""
+) -> tuple[pl.DataFrame, dict[str, str], Any]:
+    """Build the ``(policy x posterior-draw x seed)`` scenario cube.
+
+    Returns the terminal-outcome frame (for DuckDB/summary/backfire), the skipped
+    policies, and an xarray ``Dataset`` dimensioned
+    ``(policy, draw, seed, quarter, variable)`` (§8) carrying the per-quarter
+    trajectories, NaN-padded past any early collapse.
+    """
     from regworld.pipeline import Degraded
 
     actions, skipped = resolve_policies(cfg, cfg.ensemble.policies)
     if not actions:
         raise Degraded("no policy in cfg.ensemble.policies resolved to a rollout", outputs=[])
 
-    cells = _build_cells(list(actions), cfg.ensemble.posterior_draws, cfg.ensemble.n_seeds)
+    policy_names = list(actions)
+    cells = _build_cells(policy_names, cfg.ensemble.posterior_draws, cfg.ensemble.n_seeds)
     batch_size = max(cfg.ensemble.batch_size, 1)
     batches = [cells[i : i + batch_size] for i in range(0, len(cells), batch_size)]
 
     use_ray = cfg.compute.name.startswith("ray") and len(cells) >= RAY_CELL_THRESHOLD
     rows: list[dict[str, Any]] | None = None
     if use_ray:
-        rows = _run_cells_ray(cfg, batches, list(actions))
+        rows = _run_cells_ray(cfg, batches, policy_names)
     if rows is None:
         rows = []
         for batch in batches:
             rows.extend(_run_cells_serial(cfg, model, meta, actions, batch))
 
-    frame = pl.DataFrame(rows)
-    return frame, skipped
+    dataset = _assemble_dataset(
+        rows,
+        policy_names=policy_names,
+        n_draws=cfg.ensemble.posterior_draws,
+        n_seeds=cfg.ensemble.n_seeds,
+        horizon=cfg.horizon_quarters,
+    )
+    # Trajectories live in the Zarr cube; keep the terminal frame tabular.
+    frame = pl.DataFrame([{k: v for k, v in row.items() if k != "_traj"} for row in rows])
+    return frame, skipped, dataset
+
+
+def _assemble_dataset(
+    rows: list[dict[str, Any]],
+    *,
+    policy_names: Sequence[str],
+    n_draws: int,
+    n_seeds: int,
+    horizon: int,
+) -> Any:
+    """Pack per-cell trajectories into an (policy, draw, seed, quarter, variable) cube."""
+    import xarray as xr
+
+    n_vars = len(CUBE_VARIABLES)
+    data = np.full((len(policy_names), n_draws, n_seeds, horizon, n_vars), np.nan, np.float32)
+    policy_index = {name: i for i, name in enumerate(policy_names)}
+    for row in rows:
+        pi = policy_index.get(str(row["policy"]))
+        di, si = int(row["draw"]), int(row["seed_idx"])
+        traj = np.asarray(row.get("_traj", []), dtype=np.float32)
+        if pi is None or di >= n_draws or si >= n_seeds or traj.size == 0:
+            continue
+        q = min(traj.shape[0], horizon)  # NaN-pad any quarters past an early collapse
+        data[pi, di, si, :q, :] = traj[:q, :]
+    return xr.Dataset(
+        {"outcomes": (("policy", "draw", "seed", "quarter", "variable"), data)},
+        coords={
+            "policy": list(policy_names),
+            "draw": list(range(n_draws)),
+            "seed": list(range(n_seeds)),
+            "quarter": list(range(1, horizon + 1)),
+            "variable": list(CUBE_VARIABLES),
+        },
+    )
 
 
 def _series_mean(series: pl.Series) -> float:
@@ -295,11 +380,21 @@ def run_ensemble(cfg: RegWorldConfig) -> EnsembleResult:
     except FileNotFoundError as exc:
         raise Degraded(f"no trained emulator checkpoint: {exc}", outputs=[]) from exc
 
-    frame, skipped = build_cube(cfg, model, meta)
+    frame, skipped, dataset = build_cube(cfg, model, meta)
     cube_path = out / "cube.parquet"
     frame.write_parquet(cube_path)
+    # The (policy, draw, seed, quarter, variable) Zarr cube (§8, §18). The terminal
+    # Parquet above stays for DuckDB and the summary; the Zarr carries the full
+    # per-quarter trajectories the fans and dashboard read.
+    zarr_path = out / "cube.zarr"
+    if zarr_path.exists():
+        import shutil
+
+        shutil.rmtree(zarr_path)
+    dataset.to_zarr(zarr_path, mode="w")
 
     validation = run_validation(cfg, frame, model, meta)
+    backfire_by_policy = _backfire_by_policy(frame)
 
     metrics: dict[str, float] = {
         "n_cells": float(frame.height),
@@ -314,17 +409,31 @@ def run_ensemble(cfg: RegWorldConfig) -> EnsembleResult:
         "policies_included": sorted(frame["policy"].unique().to_list()) if frame.height else [],
         "policies_skipped": skipped,
         "metrics": metrics,
+        "p_backfire_by_policy": backfire_by_policy,  # §18: P(backfire | policy), every policy
         "validation": {
             "coverage": validation.coverage,
             "n_validated": validation.n_validated,
             "per_policy": validation.per_policy,
         },
         "cube_path": str(cube_path),
+        "cube_zarr_path": str(zarr_path),
+        "cube_dims": list(dataset["outcomes"].dims),
         "validation_path": str(validation.path),
     }
     summary_path = out / "ensemble_summary.json"
     summary_path.write_text(json.dumps(summary, indent=2, default=str))
     return EnsembleResult(cube=cube_path, summary=summary_path, metrics=metrics)
+
+
+def _backfire_by_policy(frame: pl.DataFrame) -> dict[str, float]:
+    """P(backfire at horizon | policy) for every policy in the cube (§18)."""
+    if frame.height == 0:
+        return {}
+    grouped = frame.group_by("policy").agg(pl.col("backfire").mean().alias("p_backfire"))
+    return {
+        str(row["policy"]): float(row["p_backfire"])
+        for row in grouped.sort("policy").iter_rows(named=True)
+    }
 
 
 __all__ = [

@@ -1,0 +1,29 @@
+# hydra-submitit-launcher (slurm extra): Hydra sweeps across Slurm jobs (§5 rule 6, §12).
+# Mirrors the plugin's registered SlurmQueueConf defaults; set partition/mem/timeouts
+# per cluster via overrides, e.g. `hydra.launcher.partition=gpu hydra.launcher.mem_gb=64`.
+_target_: hydra_plugins.hydra_submitit_launcher.submitit_launcher.SlurmLauncher
+submitit_folder: ${hydra.sweep.dir}/.submitit/%j
+timeout_min: 60
+cpus_per_task: null
+gpus_per_node: null
+tasks_per_node: 1
+mem_gb: null
+nodes: 1
+name: ${hydra.job.name}
+stderr_to_stdout: false
+partition: null
+qos: null
+comment: null
+constraint: null
+exclude: null
+gres: null
+cpus_per_gpu: null
+gpus_per_task: null
+mem_per_gpu: null
+mem_per_cpu: null
+account: null
+signal_delay_s: 120         # USR1 signal delay before timeout
+max_num_timeout: 0          # retries on job timeout; needs checkpoint-resume support
+additional_parameters: {}   # extra sbatch params, e.g. {mail-user: x@y, mail-type: BEGIN}
+array_parallelism: 256      # max jobs running in parallel
+setup: null                 # commands run in sbatch before srun

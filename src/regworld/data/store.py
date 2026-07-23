@@ -38,8 +38,17 @@ def write_observed(
     cfg: RegWorldConfig, name: str, df: pl.DataFrame, spec: TableSpec | None = None
 ) -> Path:
     spec = spec or ALL_OBSERVED.get(name)
-    if spec is not None:
-        validate_table(df, spec)
+    if spec is None:
+        # No silent skip: an observed table without a spec would be written
+        # unvalidated, and validate_table's unexpected-column rejection is part
+        # of the leakage guarantee (§8 — no truth column may reach observed/).
+        known = ", ".join(sorted(ALL_OBSERVED))
+        raise ValueError(
+            f"write_observed: no schema spec for observed table {name!r}; every "
+            f"observed table is validated on write (known specs: {known}). Add a "
+            "TableSpec to regworld.data.schema.ALL_OBSERVED or pass spec= explicitly."
+        )
+    validate_table(df, spec)
     d = observed_dir(cfg)
     d.mkdir(parents=True, exist_ok=True)
     path = d / f"{name}.parquet"

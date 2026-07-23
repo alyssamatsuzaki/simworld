@@ -352,3 +352,62 @@ def test_emulator_reward_flag_switches_source(smoke_cfg: RegWorldConfig) -> None
     env_head = EmulatorEnv(cfg_head, model=_ScriptedWorldModel(cfg_head, benign), meta=meta)
     env_head.reset(seed=1)
     assert env_head.step(np.zeros(4, np.float32))[1] == 0.0  # scripted head says 0
+
+
+def test_unseeded_reset_draws_fresh_episode_noise(smoke_cfg: RegWorldConfig) -> None:
+    """reset(seed=None) must continue the env RNG stream, not re-pin cfg.seed.
+
+    F11: SB3's unseeded auto-resets replayed one noise stream for a whole
+    training run when the env re-pinned ``cfg.seed`` on every reset. Two
+    consecutive unseeded resets must now feed the model different seeds (fresh
+    episode noise), while an explicit seed still reproduces exactly.
+    """
+    env = AbmEnv(smoke_cfg, model_factory=fake_factory())
+
+    def _first_step_compliance() -> float:
+        env.reset()
+        return float(env.step(np.array([0.6, 0.0, 0.5, 0.0], dtype=np.float32))[0][0])
+
+    env.reset(seed=99)  # anchor the stream so the run is reproducible as a whole
+    a, b = _first_step_compliance(), _first_step_compliance()
+    assert a != b  # two auto-resets drew different episode noise
+
+    # An explicit seed still replays identically.
+    env.reset(seed=7)
+    first = env.step(np.array([0.6, 0.0, 0.5, 0.0], dtype=np.float32))[0][0]
+    env.reset(seed=7)
+    second = env.step(np.array([0.6, 0.0, 0.5, 0.0], dtype=np.float32))[0][0]
+    np.testing.assert_array_equal(first, second)
+
+
+def test_default_factory_prefers_posterior_mean_theta(
+    smoke_cfg: RegWorldConfig, monkeypatch, tmp_path
+) -> None:
+    """F10: the env oracle binds calibrated theta when posterior.nc exists.
+
+    The RL policies and the exploitation gap are graded in the ABM behind the
+    env; it must run at the Stage-4 posterior mean the emulator trained around,
+    falling back to prior-center Theta() (with one warning) before calibration.
+    """
+    from regworld.environments import abm_env
+    from regworld.rules import Theta
+
+    cfg = smoke_cfg.model_copy(deep=True)
+    cfg.paths.root = str(tmp_path)
+    abm_env._THETA_CACHE.clear()
+    abm_env._WARNED_PRIOR_CENTER.clear()
+
+    # No artifact yet -> prior-center fallback (None means "use Theta()").
+    assert abm_env._default_theta(cfg) is None
+
+    # Once an artifact exists, the loader result is used (loader monkeypatched
+    # so the test needs no real arviz InferenceData on disk).
+    calibrated = Theta(beta_peer=1.9, beta_capacity=0.0)
+    monkeypatch.setattr(abm_env, "_load_posterior_mean_theta", lambda _p: calibrated)
+    from regworld.calibration.posterior import posterior_path
+
+    target = posterior_path(cfg)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_bytes(b"stub")  # presence is all _default_theta checks before loading
+    abm_env._THETA_CACHE.clear()
+    assert abm_env._default_theta(cfg) is calibrated

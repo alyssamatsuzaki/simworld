@@ -39,6 +39,17 @@ def _ci_str(value: float, ci: list[float] | None = None) -> str:
     return f"{value:.4f}"
 
 
+def _parse_coverage_count(coverage_at_90: Any) -> tuple[int, int] | None:
+    """Parse the parameter-recovery family's 'covered/graded' string into (covered, graded)."""
+    if not isinstance(coverage_at_90, str) or "/" not in coverage_at_90:
+        return None
+    try:
+        covered, graded = (int(part) for part in coverage_at_90.split("/", 1))
+    except ValueError:
+        return None
+    return covered, graded
+
+
 def build_findings(cfg: RegWorldConfig) -> Path:
     """Assemble reports/FINDINGS.md from committed artifacts.
 
@@ -83,7 +94,7 @@ def build_findings(cfg: RegWorldConfig) -> Path:
     lines.append("## The Four-Number Causal Table")
     lines.append("")
     lines.append(
-        "Figure 1 (see reports/figures/fig_01_four_numbers.png) and the table below "
+        "Figure 1 (see reports/figures/fig01_four_numbers.png) and the table below "
         "report the four key causal estimates:"
     )
     lines.append("")
@@ -198,25 +209,48 @@ def build_findings(cfg: RegWorldConfig) -> Path:
         evidence = ""
 
         if claim_key == "C1":
-            # C1: Parameter recovery. Convergence from micro diagnostics (max R-hat over
-            # every fitted parameter); older runs stored a flat `r_hat` instead.
+            # C1 (§18): SUPPORTED requires the full recovery gate — convergence
+            # (max R-hat < 1.01, divergences == 0) AND >= 12/16 parameters cover
+            # θ* at 90%. Coverage comes from the parameter_recovery eval family;
+            # convergence from the micro diagnostics. At smoke the draw count is
+            # too small for clean R-hat, so this is INCONCLUSIVE by design.
+            recovery = eval_metrics.get("parameter_recovery", {}) or {}
+            covered = _parse_coverage_count(recovery.get("coverage_at_90"))
+            beta_peer_miss = recovery.get("beta_peer_miss_under_confounded")
             if calib_micro:
                 r_hat = calib_micro.get("max_r_hat", calib_micro.get("r_hat", None))
+                divergences = calib_micro.get("divergences", None)
                 n_params = len(calib_micro.get("parameters", {})) or None
                 if r_hat is not None:
                     param_note = f" across {n_params} fitted parameters" if n_params else ""
-                    if r_hat < 1.01:
+                    cov_note = (
+                        f", {covered[0]}/{covered[1]} parameters cover θ* at 90%" if covered else ""
+                    )
+                    converged = r_hat < 1.01 and (divergences in (0, None))
+                    covers_enough = covered is not None and covered[0] >= 12
+                    if converged and covers_enough:
                         verdict = "SUPPORTED"
                         evidence = (
-                            f"Chains converged (max R-hat={r_hat:.3f} < 1.01{param_note}); "
-                            "posterior marginals recover θ* under the well-specified world."
+                            f"Full recovery gate met: max R-hat={r_hat:.3f} < 1.01{param_note}, "
+                            f"divergences={divergences}{cov_note} (>= 12). "
+                            "Posterior marginals recover θ* under the well-specified world."
+                        )
+                    elif not converged:
+                        verdict = "INCONCLUSIVE"
+                        evidence = (
+                            f"Max R-hat={r_hat:.3f}{param_note}, divergences={divergences}"
+                            f"{cov_note} — convergence is not clean at this profile's draw "
+                            "count; recovery not yet assertable (dev-profile gate)."
                         )
                     else:
                         verdict = "INCONCLUSIVE"
                         evidence = (
-                            f"Max R-hat={r_hat:.3f} (>1.01){param_note} — convergence is not "
-                            "clean at this profile's draw count; recovery not yet assertable."
+                            f"Chains converged (max R-hat={r_hat:.3f}, divergences={divergences})"
+                            f"{cov_note}, short of the >= 12/16 coverage bar at this profile."
                         )
+                    if isinstance(beta_peer_miss, bool):
+                        verb = "misses" if beta_peer_miss else "covers"
+                        evidence += f" Under confounded, β_peer {verb} truth (the C1 failure half)."
                 else:
                     evidence = "Micro diagnostics incomplete."
             else:
@@ -495,15 +529,27 @@ def build_findings(cfg: RegWorldConfig) -> Path:
                 "open-loop drift exceeds a 10% mean absolute error threshold."
             )
 
-    # RL / planning utility shortfalls
+    # RL / planning utility shortfalls — PLAN Stage 17 requires naming the
+    # policies whose ABM performance falls short of their emulator performance.
     planning_data = eval_metrics.get("planning_utility", {})
     if isinstance(planning_data, dict):
         status = planning_data.get("status", "")
-        if "degraded" in status.lower() or "pending" in status.lower():
+        gap_info = planning_data.get("dreamer_exploitation_gap")
+        if isinstance(gap_info, dict) and gap_info.get("gap") is not None:
+            gap = float(gap_info["gap"])
+            j_emu, j_abm = gap_info.get("j_emulator"), gap_info.get("j_abm")
+            over = " (exceeds the 15% budget)" if gap > 0.15 else " (within the 15% budget)"
+            failure_notes.append(
+                f"**Emulator exploitation:** the Dreamer policy's exploitation gap "
+                f"J_emulator - J_ABM is {gap:+.1%}{over} "
+                f"(J_emulator={j_emu:.3f} vs J_ABM={j_abm:.3f}) — the planner steers into "
+                "the model's errors to exactly the extent this gap is positive."
+            )
+        elif "degraded" in status.lower() or "pending" in status.lower():
             failure_notes.append(
                 "**Learned policies:** The trained RL policy may not meet the "
-                "planning-utility threshold in the true ABM, or is still in development "
-                "(pending Phase 6). Report separately if applicable."
+                "planning-utility threshold in the true ABM, or is still in development. "
+                "Report separately if applicable."
             )
 
     # Stages that did not run cleanly, from the run manifest (§15: a degraded run that
@@ -539,6 +585,22 @@ def build_findings(cfg: RegWorldConfig) -> Path:
             "*(No major failure modes recorded; the pipeline ran to completion with no "
             "DEGRADED stages and within acceptable thresholds.)*"
         )
+    lines.append("")
+
+    # Manual-verification note (§18): the OOD-banner hand-check is the one DoD
+    # item that cannot be verified autonomously. The dashboard launches headless
+    # without error; the banner's reactivity is confirmed by hand.
+    lines.append("")
+    lines.append("### Pending manual verification")
+    lines.append("")
+    lines.append(
+        "- **Streamlit OOD banner (§18):** launch `make dashboard`, set enforcement "
+        "and targeting sliders to 1.0 — the banner must turn red "
+        '("OUT OF DISTRIBUTION: Mahalanobis distance … exceeds …"); return them to '
+        'enforcement 0.5 / targeting -0.5 and it must go green ("In distribution"). '
+        "The dashboard is confirmed to launch headless without error; this reactivity "
+        "check is the single item that requires a human."
+    )
     lines.append("")
 
     # =========================================================================

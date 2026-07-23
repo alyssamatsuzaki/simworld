@@ -38,6 +38,7 @@ class StagesCfg(_Cfg):
     rl: bool = False
     ensemble: bool = False
     sensitivity: bool = False
+    evaluation: bool = False
     figures: bool = False
     report: bool = False
 
@@ -91,7 +92,6 @@ class BehaviorCfg(_Cfg):
 
 
 class AbmCfg(_Cfg):
-    vectorized: bool = True  # NumPy across the AgentSet for the firm decision (§16 g14)
     collect_agent_panel: bool = True
     max_quarters: int = 24
 
@@ -163,7 +163,6 @@ class EmulatorCfg(_Cfg):
 
 class EnvCfg(_Cfg):
     name: Literal["single_agent", "multi_agent"] = "single_agent"
-    graph_obs: bool = False
     n_strategic_firms: int = 10  # PettingZoo: top-K learners
 
 

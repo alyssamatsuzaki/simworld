@@ -11,6 +11,7 @@ import hashlib
 import json
 import logging
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -57,6 +58,10 @@ STAGE_ORDER: list[tuple[str, list[str]]] = [
     ("rl", ["seed", "rl", "objective", "emulator"]),
     ("ensemble", ["seed", "seeds", "ensemble", "objective", "emulator"]),
     ("sensitivity", ["seed", "sensitivity", "emulator"]),
+    # The §11 evaluation suite writes reports/eval/metrics.json, which figures
+    # 2/5/7/12/13 read; it must run after rl/ensemble/sensitivity so its planning
+    # and sensitivity families see their inputs.
+    ("evaluation", ["seed", "eval", "emulator"]),
     ("figures", []),  # always cheap; re-run every time
     ("report", []),
 ]
@@ -74,6 +79,7 @@ HARD_DEPS: dict[str, list[str]] = {
     "rl": ["emulator"],
     "ensemble": ["emulator"],
     "sensitivity": ["emulator"],
+    "evaluation": ["emulator"],
 }
 
 _NEVER_CACHE = {"recon", "figures", "report"}
@@ -139,6 +145,11 @@ def _save_state(cfg: RegWorldConfig, name: str, sections: list[str], outputs: li
 
 def run_pipeline(cfg: RegWorldConfig, tracker: Tracker) -> dict[str, object]:
     """Run every enabled stage in order; never let one broken stage kill the run silently."""
+    stage_names = [n for n, _ in STAGE_ORDER]
+    if cfg.force_stage is not None and cfg.force_stage not in stage_names:
+        raise ValueError(
+            f"force_stage={cfg.force_stage!r} is not a stage; valid names: {stage_names}"
+        )
     results: dict[str, StageResult] = {}
     forced = False
     t_start = time.time()
@@ -171,7 +182,12 @@ def run_pipeline(cfg: RegWorldConfig, tracker: Tracker) -> dict[str, object]:
                 log.info("stage %-14s CACHED", name)
                 continue
 
-        fn = getattr(stage_impls, f"stage_{name}", None)
+        fn: Callable[[RegWorldConfig, Tracker], list[Path]] | None
+        if cfg.isolated_envs and name in stage_impls.STAGE_SCRIPTS:
+            # §5 fallback: script-backed stages run via uv in their per-group venv.
+            fn = stage_impls.isolated_stage(name)
+        else:
+            fn = getattr(stage_impls, f"stage_{name}", None)
         t0 = time.time()
         if fn is None:
             results[name] = StageResult(name, "BLOCKED", notes="no implementation registered")

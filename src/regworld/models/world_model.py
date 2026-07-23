@@ -358,7 +358,12 @@ class WorldModel(nn.Module):
         feature: torch.Tensor
         if self.arch == "gru_baseline":
             assert isinstance(state.core, torch.Tensor)
-            agg_prev = self.aggregate_head(state.core)
+            # The encoder consumes aggregates in NATURAL units (teacher forcing feeds
+            # it the raw observation aggregates); aggregate_head predicts in symlog
+            # space (DreamerV3), so symexp before re-encoding — matching the rssm_gnn
+            # branch below. Without this the gru_baseline imagines from HHI~9 instead
+            # of HHI~thousands, handicapping exactly the ablation family 11 ranks.
+            agg_prev = symexp_clamped(self.aggregate_head(state.core))
             features = self._node_features(state.firm_dynamic, state.segment_dynamic)
             embed, _ = self.encoder(features, agg_prev)
             hidden: torch.Tensor = self.core_cell(torch.cat([embed, action], dim=-1), state.core)

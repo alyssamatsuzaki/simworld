@@ -432,7 +432,8 @@ def fig_trajectory_fans(cfg: RegWorldConfig, fig_dir: Path, n_seeds: int = 12) -
     policies = list(STATIC_POLICIES.items())
     fig, axes = plt.subplots(2, len(policies), figsize=(3.2 * len(policies), 6), squeeze=False)
     quarters = np.arange(1, horizon + 1)
-    bands = ((0.05, 0.95, 0.15), (0.10, 0.90, 0.25), (0.25, 0.75, 0.35))
+    # 50 / 80 / 95% credible bands (§10 Stage 15 fig 8; matches the dashboard fan).
+    bands = ((0.025, 0.975, 0.15), (0.10, 0.90, 0.25), (0.25, 0.75, 0.35))
 
     for col, (name, levers) in enumerate(policies):
         env = EmulatorEnv(cfg, model=model, meta=meta)
@@ -464,7 +465,7 @@ def fig_trajectory_fans(cfg: RegWorldConfig, fig_dir: Path, n_seeds: int = 12) -
             axes[1, col].set_ylabel("HHI")
 
     fig.suptitle(
-        f"Trajectory fans across {n_seeds} seeds (50/80/90% credible bands)", fontweight="bold"
+        f"Trajectory fans across {n_seeds} seeds (50/80/95% credible bands)", fontweight="bold"
     )
     return _save(fig, fig_dir / "fig08_trajectory_fans.png")
 

@@ -30,6 +30,11 @@ class ObservedWorld:
     graphs: rules.Graphs
     initial_state: rules.WorldState
     theta: rules.Theta
+    # Consumer surplus of the quarter-0 spend allocation, computed from the same
+    # noisy utility draw that produced ``initial_state.spend`` — the CS(0) leg of
+    # the reward/backfire comparison must share the stepped quarters' noise model
+    # (Jensen: a noise-free logsumexp baseline under-states CS on average).
+    baseline_consumer_surplus: float | None = None
 
 
 @dataclass(frozen=True)
@@ -166,9 +171,37 @@ def _observed_segments(
     )
 
 
-def load_observed_world(cfg: RegWorldConfig, seed: int | None = None) -> ObservedWorld:
-    """Reconstruct a forecast world strictly from observed Parquet inputs."""
-    del seed  # initial forecast state is deterministic; the model seed drives dynamics
+# Immutable Parquet-derived world template, cached per observed-data root so an
+# env reset does not pay Parquet IO + graph reconstruction per episode. Keyed by
+# (resolved observed dir, n_segments, registry mtime) — a regenerated dataset in
+# the same directory busts the cache. Consumers receive deep copies, never the
+# cached arrays themselves, so episodes cannot share mutable state.
+_WORLD_TEMPLATE_CACHE: dict[
+    tuple[str, int, int],
+    tuple[rules.FirmAttributes, rules.SegmentAttributes, rules.Graphs],
+] = {}
+
+
+def _observed_world_template(
+    cfg: RegWorldConfig,
+) -> tuple[rules.FirmAttributes, rules.SegmentAttributes, rules.Graphs]:
+    registry_path = store.observed_dir(cfg) / "firm_registry.parquet"
+    key = (
+        str(store.observed_dir(cfg).resolve()),
+        cfg.population.n_consumer_segments,
+        registry_path.stat().st_mtime_ns,
+    )
+    cached = _WORLD_TEMPLATE_CACHE.get(key)
+    if cached is None:
+        cached = _build_world_template(cfg)
+        _WORLD_TEMPLATE_CACHE[key] = cached
+    return copy.deepcopy(cached)
+
+
+def _build_world_template(
+    cfg: RegWorldConfig,
+) -> tuple[rules.FirmAttributes, rules.SegmentAttributes, rules.Graphs]:
+    """Reconstruct the static world strictly from observed Parquet inputs."""
     registry = store.read_observed(cfg, "firm_registry").sort("firm_id")
     panel = store.read_observed(cfg, "firm_panel")
     survey = store.read_observed(cfg, "consumer_survey")
@@ -189,9 +222,6 @@ def load_observed_world(cfg: RegWorldConfig, seed: int | None = None) -> Observe
 
     latest = panel.sort("quarter").group_by("firm_id").last()
     latest_by_id = {int(row["firm_id"]): row for row in latest.iter_rows(named=True)}
-    y = np.zeros(n_firms, dtype=np.float64)
-    alive = np.ones(n_firms, dtype=bool)
-    audited = np.zeros(n_firms, dtype=bool)
     region = np.zeros(n_firms, dtype=np.int64)
     revenue_signal = size.copy()
     sampled_revenue = latest["revenue_noisy"].to_numpy().astype(np.float64)
@@ -221,18 +251,36 @@ def load_observed_world(cfg: RegWorldConfig, seed: int | None = None) -> Observe
     )
     segments = _observed_segments(cfg, survey, total_budget=float(size.sum()))
     graphs = _observed_graphs(cfg, n_firms, segments.weight.size)
-    constants = rules.Constants()
-    utility = constants.quality_weight * quality[None, :]
-    spend, revenue, _ = rules.allocate_spend(utility, alive, graphs.market_mask, segments)
+    return firms, segments, graphs
 
-    publicity = np.zeros(int(sector.max()) + 1, dtype=np.float64)
+
+def load_observed_world(cfg: RegWorldConfig, seed: int | None = None) -> ObservedWorld:
+    """Reconstruct a forecast world strictly from observed Parquet inputs.
+
+    The quarter-0 spend allocation carries the same N(0, spend_utility_noise)
+    utility shock as ``rules.initial_state`` (the DGP's quarter-0 semantics) and
+    every stepped quarter, drawn from a Generator seeded by ``seed`` (default
+    ``cfg.seed``) so the same seed reproduces the same episode baseline.
+    """
+    firms, segments, graphs = _observed_world_template(cfg)
+    n_firms = firms.n
+    constants = rules.Constants()
+    rng = np.random.default_rng(cfg.seed if seed is None else seed)
+    alive = np.ones(n_firms, dtype=bool)
+    # Same draw shape/order as rules.initial_state: spend by quality plus shock.
+    utility = constants.quality_weight * firms.quality[None, :] + rng.normal(
+        0.0, constants.spend_utility_noise, size=(segments.weight.size, n_firms)
+    )
+    spend, revenue, baseline_cs = rules.allocate_spend(utility, alive, graphs.market_mask, segments)
+
+    publicity = np.zeros(int(firms.sector.max()) + 1, dtype=np.float64)
     initial_state = rules.WorldState(
-        y=y,
+        y=np.zeros(n_firms, dtype=np.float64),
         alive=alive,
         revenue=revenue,
         tenure=np.zeros(n_firms, dtype=np.float64),
         fines=np.zeros(n_firms, dtype=np.float64),
-        audited=audited,
+        audited=np.zeros(n_firms, dtype=bool),
         spend=spend,
         trust=segments.trust0.copy(),
         publicity=publicity,
@@ -246,6 +294,7 @@ def load_observed_world(cfg: RegWorldConfig, seed: int | None = None) -> Observe
         graphs=graphs,
         initial_state=initial_state,
         theta=rules.Theta(beta_capacity=0.0),
+        baseline_consumer_surplus=baseline_cs,
     )
 
 
@@ -399,10 +448,14 @@ class RegulationModel(mesa.Model):
             float(np.sum(state.y * alive_f * (terc == k)) / max(np.sum(alive_f * (terc == k)), 1.0))
             for k in (0, 1, 2)
         )
-        utility = self.constants.quality_weight * self.firms.quality[None, :]
-        _, _, consumer_surplus = rules.allocate_spend(
-            utility, state.alive, self.graphs.market_mask, self.segments
-        )
+        consumer_surplus = getattr(self.world, "baseline_consumer_surplus", None)
+        if consumer_surplus is None:
+            # Worlds built without a recorded baseline CS (e.g. hand-made test
+            # worlds) fall back to the noise-free quality-only allocation.
+            utility = self.constants.quality_weight * self.firms.quality[None, :]
+            _, _, consumer_surplus = rules.allocate_spend(
+                utility, state.alive, self.graphs.market_mask, self.segments
+            )
         return rules.QuarterOutcome(
             compliance_rate=float(np.sum(state.y * alive_f) / n_alive),
             compliance_rate_weighted=float(
@@ -481,6 +534,12 @@ class RegulationModel(mesa.Model):
                 self.firms.n, self.last_strategic_controls.association_enforcement_multiplier.size
             )
         controls = self._validated_controls(controls)
+        # PLAN Stage 9: lobbying reduces the effective enforcement applied to the
+        # firm's association NEXT quarter — this step is scaled by the multiplier
+        # submitted last quarter; the one submitted now takes effect next step.
+        lagged_association_multiplier = (
+            self.last_strategic_controls.association_enforcement_multiplier
+        )
         self.last_strategic_controls = controls
         previous = self.state
         t = previous.quarter
@@ -492,10 +551,10 @@ class RegulationModel(mesa.Model):
         alpha = rules.audit_probabilities(previous, self.firms, self.constants, levers, active)
         associations = self.firms.association
         valid_association = (associations >= 0) & (
-            associations < controls.association_enforcement_multiplier.size
+            associations < lagged_association_multiplier.size
         )
         firm_enforcement = np.ones(self.firms.n, dtype=np.float64)
-        firm_enforcement[valid_association] = controls.association_enforcement_multiplier[
+        firm_enforcement[valid_association] = lagged_association_multiplier[
             associations[valid_association]
         ]
         alpha = np.clip(alpha * firm_enforcement, 0.0, 1.0)

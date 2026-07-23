@@ -20,7 +20,10 @@ RUN useradd -m -u 1000 rw
 WORKDIR /work
 COPY pyproject.toml uv.lock README.md ./
 COPY src ./src
-RUN uv sync --frozen --no-dev
+# All extras: the smoke CMD runs the bayes/causal/rl/opt stages and the app
+# (Streamlit) dashboard, and `make smoke` inside the container runs `pytest -m
+# slow` (dev), so a --no-dev core-only sync cannot run the image's own workload.
+RUN uv sync --frozen --all-extras
 
 COPY configs ./configs
 COPY scripts ./scripts

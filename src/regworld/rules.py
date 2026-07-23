@@ -275,7 +275,16 @@ def compliance_cost_share(
 
 
 def neighbour_share(y_prev: np.ndarray, alive: np.ndarray, graphs: Graphs) -> np.ndarray:
-    """n_{i,t-1}: lagged supply-neighbour compliance share, in+out edges (§7.4)."""
+    """n_{i,t-1}: lagged supply-neighbour compliance share, in+out edges (§7.4).
+
+    Convention (deviation from §7.4's letter, recorded in docs/DEVIATIONS.md
+    2026-07-23): the denominator sums ALIVE neighbours only, not §7.4's Σ_l w_il
+    over all neighbours — an exited neighbour drops out of the mean rather than
+    counting as non-compliant. The DGP, the tensorized ABM, and the analyst
+    reconstruction in data/ingest.py all share this convention, so beta_peer is
+    defined w.r.t. the alive-neighbour share throughout. Do not change one side
+    without the others (and without recalibration).
+    """
     a = graphs.supply_und
     num = a @ (y_prev * alive)
     den = a @ alive.astype(np.float64)

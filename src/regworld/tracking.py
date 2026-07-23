@@ -26,7 +26,8 @@ def _git_head() -> str:
             ).stdout.strip()
             or "unknown"
         )
-    except OSError:  # pragma: no cover
+    except (OSError, subprocess.SubprocessError):  # pragma: no cover
+        # SubprocessError covers TimeoutExpired: a hung `git` must not kill a tracker start.
         return "unknown"
 
 
@@ -122,7 +123,12 @@ class WandbTracker:
         self._run: Any = None
 
     def start(self, run_name: str, config: dict[str, Any]) -> None:
-        self._run = self._wandb.init(project=self._experiment, name=run_name, config=config)
+        # git_commit in the run config: provenance parity with MlflowTracker's tag.
+        self._run = self._wandb.init(
+            project=self._experiment,
+            name=run_name,
+            config={**config, "git_commit": _git_head()},
+        )
 
     def log_metrics(self, metrics: Mapping[str, float], step: int | None = None) -> None:
         self._wandb.log(dict(metrics), step=step)
