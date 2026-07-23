@@ -54,7 +54,7 @@ def test_build_cube_tiny_model_two_static_policies(smoke_cfg: RegWorldConfig) ->
     model = _tiny_world_model(cfg)
     meta = _emulator_meta(cfg)
 
-    frame, skipped = build_cube(cfg, model, meta)
+    frame, skipped, dataset = build_cube(cfg, model, meta)
 
     assert skipped == {}
     # 2 policies x 1 posterior draw x 1 seed = 2 cells.
@@ -69,6 +69,7 @@ def test_build_cube_tiny_model_two_static_policies(smoke_cfg: RegWorldConfig) ->
         "reward",
     ):
         assert column in frame.columns
+    assert "_traj" not in frame.columns  # trajectories live in the Zarr cube, not the frame
     assert np.isfinite(frame["reward"].to_numpy()).all()
     assert frame["backfire"].dtype == pl.Boolean
     assert set(frame["draw"].to_list()) == {0}
@@ -76,14 +77,24 @@ def test_build_cube_tiny_model_two_static_policies(smoke_cfg: RegWorldConfig) ->
     # distinct seeds per policy (distinct torch.Generator draws per cell)
     assert frame["seed"].n_unique() == 2
 
+    # §18: the cube carries the (policy, draw, seed, quarter, variable) contract.
+    assert dataset["outcomes"].dims == ("policy", "draw", "seed", "quarter", "variable")
+    assert list(dataset.sizes.values()) == [2, 1, 1, cfg.horizon_quarters, 9]
+    assert dataset.coords["variable"].values[0] == "compliance_rate"
+    assert dataset.coords["variable"].values[-1] == "backfire"
+    assert list(dataset.coords["policy"].values) == ["none", "uniform_low"]
+    # every run-to-horizon cell has a finite compliance trajectory at quarter 1
+    q1 = dataset["outcomes"].isel(quarter=0, variable=0).values
+    assert np.isfinite(q1).all()
+
 
 def test_build_cube_is_deterministic(smoke_cfg: RegWorldConfig) -> None:
     cfg = _tiny_cfg(smoke_cfg)
     model = _tiny_world_model(cfg)
     meta = _emulator_meta(cfg)
 
-    frame_a, _ = build_cube(cfg, model, meta)
-    frame_b, _ = build_cube(cfg, model, meta)
+    frame_a, _, _ = build_cube(cfg, model, meta)
+    frame_b, _, _ = build_cube(cfg, model, meta)
 
     polars.testing.assert_frame_equal(
         frame_a.sort(["policy", "draw", "seed_idx"]), frame_b.sort(["policy", "draw", "seed_idx"])
@@ -103,7 +114,7 @@ def test_serial_fallback_runs_without_ray(
 
     monkeypatch.setattr(cube_mod, "_run_cells_ray", _fail_if_called)
 
-    frame, skipped = build_cube(cfg, model, meta)
+    frame, skipped, _ = build_cube(cfg, model, meta)
     assert frame.height == 2
     assert skipped == {}
 
@@ -447,3 +458,15 @@ def test_run_ensemble_end_to_end_on_real_artifacts() -> None:
     assert result.cube.exists()
     assert result.summary.exists()
     assert result.metrics["n_cells"] > 0
+
+    # §18: the Zarr cube exists with the (policy, draw, seed, quarter, variable)
+    # contract, and P(backfire | policy) is recorded for every included policy.
+    import json as _json
+
+    import xarray as xr
+
+    summary = _json.loads(result.summary.read_text())
+    zarr_cube = xr.open_zarr(summary["cube_zarr_path"])
+    assert zarr_cube["outcomes"].dims == ("policy", "draw", "seed", "quarter", "variable")
+    assert set(summary["p_backfire_by_policy"]) == set(summary["policies_included"])
+    assert all(0.0 <= v <= 1.0 for v in summary["p_backfire_by_policy"].values())

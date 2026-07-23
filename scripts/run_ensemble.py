@@ -29,6 +29,7 @@ def main(cfg: DictConfig) -> None:
     setup_logging()
 
     from regworld.ensemble import run_ensemble
+    from regworld.ensemble.validation import CoverageGateFailure, enforce_coverage_gate
 
     try:
         result = run_ensemble(cfg_obj)
@@ -39,6 +40,16 @@ def main(cfg: DictConfig) -> None:
     log.info("ensemble cube -> %s", result.cube)
     log.info("ensemble summary -> %s", result.summary)
     log.info("ensemble metrics: %s", json.dumps(result.metrics, indent=2))
+
+    # Enforce the >=0.85 coverage gate here too, not only inside the pipeline
+    # driver — a standalone `make ensemble` at a gating profile must fail loudly
+    # when the emulator's predictive band does not cover the ABM (§10 Stage 11).
+    try:
+        status = enforce_coverage_gate(cfg_obj, result.metrics["coverage"])
+        log.info("coverage gate: %s (coverage=%.3f)", status, result.metrics["coverage"])
+    except CoverageGateFailure as exc:
+        log.error("coverage gate FAILED: %s", exc)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

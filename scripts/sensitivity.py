@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import json
 import sys
-from pathlib import Path
 
 import hydra
 from omegaconf import DictConfig
@@ -36,20 +35,22 @@ def main(cfg: DictConfig) -> None:
         optuna_path = save_optuna_best(cfg_obj, optuna_result)
         log.info("Optuna policy search completed")
 
-        summary = {
-            "profile": cfg_obj.profile_name,
-            "seed": cfg_obj.seed,
-            "indices_path": str(sensitivity_result.indices),
-            "summary_path": str(sensitivity_result.summary),
-            "optuna_path": str(optuna_path),
-            "metrics": sensitivity_result.metrics,
-            "optuna_best_J": optuna_result["best_J"],
-            "optuna_best_levers": optuna_result["best_levers"],
-        }
-
-        summary_path = Path(cfg_obj.paths.root) / "sensitivity" / "sensitivity_summary.json"
+        # MERGE the Optuna results into the module's sensitivity_summary.json
+        # rather than clobbering it with a different schema — report.py reads
+        # both the Morris/Sobol analysis fields and optuna_best_J from this one
+        # canonical file.
+        summary_path = sensitivity_result.summary
+        summary = json.loads(summary_path.read_text())
+        summary.update(
+            {
+                "indices_path": str(sensitivity_result.indices),
+                "optuna_path": str(optuna_path),
+                "optuna_best_J": optuna_result["best_J"],
+                "optuna_best_levers": optuna_result["best_levers"],
+            }
+        )
         summary_path.write_text(json.dumps(summary, indent=2))
-        log.info("Full summary → %s", summary_path)
+        log.info("Stage-14 summary (analysis + Optuna) -> %s", summary_path)
 
         log.info("§14 Stage 14 complete: exit 0")
         sys.exit(0)

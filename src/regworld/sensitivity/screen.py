@@ -428,6 +428,48 @@ def run_sobol(
     return result, samples, outputs_array
 
 
+def _abm_episode_return(cfg: RegWorldConfig, truth_run: TensorTrajectory) -> float:
+    """Episode return J from a tensorized ABM rollout, matching the emulator's J.
+
+    The emulator's Sobol objective sums ``regulator_reward`` over the episode when
+    ``emulator.reward_from_outcomes`` (the ABM has no reward head, so the ABM J is
+    always the recomputed reward). Same weights, same baseline convention as
+    ``EmulatorEnv.step`` — this makes the cross-check a like-for-like J comparison.
+    """
+    weights = cast(
+        tuple[float, float, float, float, float, float],
+        tuple(
+            float(getattr(cfg.objective, name))
+            for name in ("w_c", "w_h", "w_s", "w_e", "w_t", "w_x")
+        ),
+    )
+    constants = rules.Constants()
+
+    def _to_outcome(o: object) -> rules.QuarterOutcome:
+        terc = np.asarray(o.compliance_by_tercile.detach()).ravel().tolist()  # type: ignore[attr-defined]
+        return rules.QuarterOutcome(
+            compliance_rate=float(o.compliance_rate.item()),  # type: ignore[attr-defined]
+            compliance_rate_weighted=float(o.compliance_rate_weighted.item()),  # type: ignore[attr-defined]
+            compliance_by_tercile=(float(terc[0]), float(terc[1]), float(terc[2])),
+            hhi=float(o.hhi.item()),  # type: ignore[attr-defined]
+            mean_trust=float(o.mean_trust.item()),  # type: ignore[attr-defined]
+            consumer_surplus=float(o.consumer_surplus.item()),  # type: ignore[attr-defined]
+            exit_rate_cum=float(o.exit_rate_cum.item()),  # type: ignore[attr-defined]
+            enforcement_cost=float(o.enforcement_cost.item()),  # type: ignore[attr-defined]
+            n_audits=int(o.n_audits.item()),  # type: ignore[attr-defined]
+        )
+
+    baseline = _to_outcome(truth_run.outcomes[0])
+    return float(
+        sum(
+            rules.regulator_reward(
+                _to_outcome(o), baseline, weights, constants, cfg.population.n_firms
+            )
+            for o in truth_run.outcomes
+        )
+    )
+
+
 def run_abm_cross_check(
     cfg: RegWorldConfig,
     sobol_samples: NDArray[np.float64],
@@ -435,8 +477,11 @@ def run_abm_cross_check(
 ) -> dict[str, object]:
     """Validate emulator-vs-ABM agreement on a subsample of Sobol design points.
 
-    Randomly select abm_check_points from the Sobol samples, evaluate them in the
-    true ABM (tensorized), and compute Spearman correlation of J.
+    Randomly select abm_check_points from the Sobol samples, evaluate the SAME
+    objective J (summed regulator reward) in the true ABM (tensorized) as the
+    emulator Sobol run computed, and report the Spearman rank correlation and the
+    mean absolute J gap. Reported, not gated: a low correlation means the Sobol
+    indices inherited a wrong emulator and the report says so (§14a guard).
     """
     log.info(
         "Starting ABM cross-check (%d points from Sobol sample)",
@@ -452,7 +497,7 @@ def run_abm_cross_check(
     names = list(rules.Theta.__dataclass_fields__)
     theta = rules.Theta(**dict(zip(names, theta_rows.mean(axis=0).tolist(), strict=True)))
 
-    abm_compliance = []
+    abm_returns = []
     for idx, i in enumerate(indices):
         sample = sobol_samples[i]
         lever_schedule = np.tile(sample, (cfg.horizon_quarters, 1))
@@ -466,16 +511,21 @@ def run_abm_cross_check(
                 quarters=cfg.horizon_quarters,
                 lever_schedule=lever_schedule,
             )
-            final_compliance = float(truth_run.outcomes[-1].compliance_rate.item())
+            abm_j = _abm_episode_return(cfg, truth_run)
         except Exception as e:
             log.warning("ABM cross-check failed for sample %d: %s", i, e)
-            final_compliance = np.nan
-        abm_compliance.append(final_compliance)
+            abm_j = np.nan
+        abm_returns.append(abm_j)
 
-    abm_array = np.array(abm_compliance)
+    abm_array = np.array(abm_returns)
     emulator_subsample = sobol_outputs[indices]
 
     valid = ~np.isnan(abm_array) & ~np.isnan(emulator_subsample)
+    mean_abs_gap = (
+        float(np.mean(np.abs(emulator_subsample[valid] - abm_array[valid])))
+        if valid.sum()
+        else float("nan")
+    )
     if valid.sum() < 3:
         corr = None
         log.warning("ABM cross-check: fewer than 3 valid points, skipping correlation")
@@ -484,14 +534,20 @@ def run_abm_cross_check(
 
         corr_result = spearmanr(emulator_subsample[valid], abm_array[valid])
         corr = float(corr_result.statistic)
-        log.info("ABM cross-check: Spearman corr = %.3f (p=%.4f)", corr, corr_result.pvalue)
+        log.info(
+            "ABM cross-check: J Spearman corr = %.3f (p=%.4f), mean|dJ| = %.3f",
+            corr,
+            corr_result.pvalue,
+            mean_abs_gap,
+        )
 
     return {
-        "method": "ABM cross-check (terminal compliance)",
+        "method": "ABM cross-check (episode return J, like-for-like)",
         "sample_size": len(indices),
         "valid_points": int(valid.sum()),
         "emulator_J_mean": float(np.nanmean(emulator_subsample)),
-        "abm_compliance_mean": float(np.nanmean(abm_array)),
+        "abm_J_mean": float(np.nanmean(abm_array)),
+        "emulator_vs_abm_J_mean_abs_gap": mean_abs_gap,
         "emulator_vs_abm_spearman_corr": corr,
     }
 
