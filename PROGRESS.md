@@ -1,101 +1,96 @@
 # PROGRESS
 
-Run started: 2026-07-19   Agent session: 3   Git HEAD: Stage 4 calibration (see latest git log)
+Run started: 2026-07-23 (audit-and-finish)   Agent session: 4   Git HEAD: 2ff392d at audit start
+Prior history: sessions 1–3 built Phases 1–7 (2026-07-19 → 2026-07-22, macOS arm64 then Windows x86_64).
+This session: full independent audit on Linux x86_64 (4 cores, 15 GB RAM), then finish-and-publish.
 
-## Phase status
-- [x] 1 Foundation (gate green; CI runs on push)
-- [x] 2 World & data (gate green)
-- [x] 3 Simulation (gate green)
-- [x] 4 Inference (gate green: 7 slow tests in test_parameter_recovery + test_causal_recovers_known_effect)
-- [x] 5 Emulator (gate green: test_dynamics_shapes + test_smoke_train + make emulator + eval_emulator)
-- [x] 6 Control & ensemble (gate green at profile=smoke; see Next action for dev-profile follow-up)
-- [x] 7 Delivery (gate green at profile=smoke: full 17-stage pipeline DONE/CACHED, 13/13 figures, FINDINGS.md)
+## Phase status (verified this session, not inherited)
 
-## Stage log
-| Stage | Status (DONE/SKIPPED/DEGRADED/FAILED/BLOCKED) | Gate | Notes |
+- [x] 1 Foundation — gate re-run green (lint 0, mypy 0 on 91 files, fast suite 244 passed / 1 skipped)
+- [x] 2 World & data — gate re-run green (inside fast suite + smoke)
+- [x] 3 Simulation — gate re-run green
+- [x] 4 Inference — gate re-run green (slow suite green inside `make smoke`)
+- [x] 5 Emulator — gate re-run green
+- [x] 6 Control & ensemble — gate green at smoke; coverage-gate STRICT only at dev (not yet re-run at dev)
+- [x] 7 Delivery — `make smoke` exit 0, all 15 pipeline stages DONE; **but see F2: figures 8/13 on a clean checkout**
+
+## Verified baseline (2026-07-23, this box)
+
+| Check | Result | Evidence |
+|---|---|---|
+| `make setup` + every extra one at a time | all resolved; `.stage_skips` empty | uv logs; bayes/causal/rl/opt/app/tensor/slurm each OK |
+| `make lint` | exit 0 | ruff clean, 136 files formatted |
+| `make typecheck` | exit 0 | mypy: 91 source files, no issues |
+| `make test` | exit 0 | 244 passed, 1 skipped (~11 min on 4 cores) |
+| `make smoke` | exit 0 | 15/15 stages DONE, slow suite green; ~14 min wall **under heavy contention** (7 audit subagents in parallel); clean re-timing pending |
+| Docker | daemon started locally | `docker ps` works; build gate now locally verifiable |
+
+## §18 Definition of Done — audited status (before fixes)
+
+| # | Item | Status | Evidence |
 |---|---|---|---|
-| 0 recon | DONE | GATE-0-OK | uv 0.11.29, py3.12, all extras resolved; see DEVIATIONS |
-| 1 data | DONE | GATE-1-OK | Raw §8 observations, observed-only analysis hats, deterministic Parquet, DuckDB views; rollout grid retains not-yet-treated DiD controls |
-| 2 graphs | DONE | GATE-2-OK | Complete-demand NetworkX graph pair, metrics, PyG static/dynamic feature contract; 9 focused tests pass |
-| 3 abm | DONE | GATE-3-OK | Mesa 3.5 AgentSet model, observed-only fresh forecast world, deterministic DataCollector outputs; 10 contract tests pass |
-| 3b tensorized | DONE | 32-seed KS p > 0.05 | Pure-PyTorch sparse differentiable ABM; shapes, gradients, determinism, and Mesa agreement pass |
-| 4 calibration | DONE | GATE-4-OK (make calibrate exit 0) | User-authorized third `make calibrate PROFILE=smoke` succeeded in 43s: 17 fitted quantities, NumPyro micro NUTS in isolated subprocess, PyMC crosscheck, macro SMC-ABC surrogate, ArviZ energy/pair/predictive diagnostics all written. 8 focused tests green + new `test_micro_diagnostics_runs_full_arviz_and_energy_path` covering the two prior failure sites. lint + typecheck clean. PyMC rhat/ess warnings expected at smoke draws. |
-| 5 causal | DONE | GATE-5-OK (make causal exit 0 + 7 C2 tests) | Full 5a-5f: two-variant DAG, four estimators (naive logit, LinearDML/CausalForestDML, C-S staggered DiD, DML-onset), DoWhy refuters (placebo -0.008) + E-value, PC/GES discovery (SHD 14-15 vs 7, wrong as designed), four-number gate PASSED: tau_true 0.415, tau_abm 0.347 (sign+3x OK), tau_qe 0.061 CI [-0.11,0.26] (tau_abm_did 0.276 inside), tau_obs 0.124 tight-and-wrong. Graded per estimand: sealed tau_did_truth 0.358 + interference gap 0.056 (user-approved adaptation; see DEVIATIONS). C2 validates estimators on a full-panel world (DiD covers, DML 11.6 SE wrong, audit confounding > 2 SE with and without z). |
-| 6+7 emulator | DONE | GATE-6-OK (make emulator exit 0 + 2 test files) | GraphRSSM: macro RSSM (32x32 categorical latents, straight-through + unimix, KL-balanced 0.8/free-bits 1.0), micro HeteroConv-SAGE GNN + per-firm GRUCell, pooled encoder + hand-built aggregates, symlog/two-hot/BCE heads. Domain-randomized Zarr corpus (random/scripted/sinusoid/piecewise policies via `lever_schedule` on the tensorized twin; theta ~ Stage-4 posterior). DreamerV3 losses + k=8 open-loop imagination loss. Ablation arches rssm_flat/gru_baseline. `test_dynamics_shapes` (shapes/grads/no-NaN, 14) + `test_smoke_train` (overfit one batch < 0.05x initial in 200 steps, beats persistence, 3). §11 eval suite: 10 families run, planning-utility + sensitivity marked pending Phase 6. |
-| 8 envs | DONE | GATE-8-OK | Gymnasium AbmEnv (Phase 3) + EmulatorEnv (Phase 5): identical Box spaces by construction, deterministic seeded reset, terminated (collapse) vs truncated (horizon), reward-head vs recompute flag; 9 contract tests incl. space-identity |
-| 9 marl env | DONE | GATE-9-OK | PettingZoo Parallel API (100 cycles), top-K strategic firms, live pre-draw action effects and profit rewards |
-| 10 rl | DONE | test_agents_contract.py green | SB3 PPO trained inside EmulatorEnv (control) + latent Dreamer-style actor-critic on imagined rollouts (experiment), shared regworld.agents.registry policy lookup used by both this stage and Stage 11. stage_rl wired (no stub). `make rl` at dev profile not yet run by the parent session — only the smoke-profile contract test is confirmed. |
-| 11 ensemble | DONE | test_ensemble_contract.py green (incl. real-checkpoint e2e) | Ray-scalable (policy x posterior-draw x seed) scenario cube + ABM cross-validation subsample (regworld.ensemble). Fixed at commit time: EmulatorEnv reads meta["extras"]["n_firms"], which train_emulator.py's checkpoint never wrote — backfilled from cfg.population.n_firms (same pattern as sensitivity's policy search) in cube.py's _rollout_cell. Also rewrote the package docstring, which was tripping test_no_dgp_leakage.py's bare "oracle" grep. stage_ensemble wired (no stub). `make ensemble` at dev profile not yet run. |
-| 12 hydra | | | |
-| 13 tracking | | | |
-| 14 sensitivity | DONE | GATE clean: ruff/mypy/pytest + scripts/sensitivity.py and scripts/eval_emulator.py both run end-to-end at profile=smoke | SALib Morris screen -> Sobol indices on the emulator + Optuna TPE policy search over the 4 regulator levers (regworld.sensitivity). Wired into stage_sensitivity and into the §11 eval driver as metric family 12 (was a placeholder status string). |
-| 15 viz | DONE | 13/13 figures written by full smoke pipeline; test_visualization_contract green | regworld.visualization: figures.py (13 paper figures, graceful per-figure skip), interactive.py (Plotly fans/latent-PCA/network diffusion), dashboard.py (Streamlit, 4 real levers, Mahalanobis OOD banner — the client-critical check, unit-tested). Wired into stage_figures. Deviations: 4-lever dashboard (no fifth "fine scale" lever exists in the action space) and per-quarter fan rebuilt by re-running EmulatorEnv (cube stores terminal-only) — both in DEVIATIONS.md. |
-| 16 tooling | DONE | pre-existing from Phase 1 setup; verified coherent | docker/{Dockerfile,Dockerfile.cuda,compose.yaml}, .github/workflows/{ci,docker,nightly}.yml, slurm/submit.sbatch. CI runs lint→typecheck→test→smoke and uploads FINDINGS.md + figures; docker.yml pushes to GHCR on tags; nightly runs slow tests + dev profile. `docker build` gate not run locally (needs a Docker daemon) — exercised in CI. |
-| 17 report | DONE | build_report.py runs end-to-end at smoke; test_report_contract green (required-heading enforced) | regworld.evaluation.report.build_findings assembles reports/FINDINGS.md: disclaimer-first, four-number table, C1-C6 claims ledger (C2/C4/C5 SUPPORTED, C1/C3/C6 honestly INCONCLUSIVE at smoke), always-emitted "Where This Model Fails" section, run manifest. Verdicts read real artifact schemas; all reads honour cfg.paths.root (REGWORLD_ARTIFACT_ROOT-safe). docs/MINIMAL_PATH.md written. |
+| 1 | lint/typecheck/test/smoke green | PASS (local) | above; CI runs on push |
+| 2 | docker build + smoke in container | **FAIL** | Dockerfile `uv sync --frozen --no-dev` installs core only — image cannot run its own smoke CMD (F1) |
+| 3 | all 16 §2 rows: module+script+test | PARTIAL | renames recorded below; Stage 14c BoTorch absent; Stage 10d not wired into pipeline (F5, F6) |
+| 4 | `make all` (dev) no FAILED stage | UNKNOWN | not yet run on this box (prior sessions deferred; see Next action) |
+| 5 | FINDINGS disclaimer + C1–C6 | PASS (structure) | verified; C1 verdict logic gap (F7) |
+| 6 | Parameter-recovery gate (C1) | PARTIAL | reported but thresholds asserted nowhere; β_peer must-miss unasserted (F7) |
+| 7 | Four-number causal gate (C2) | PASS at smoke | gate PASSED; C2 slow tests green |
+| 8 | Planning-utility gate | PARTIAL | asserted in test_policy.py; xfail-documented at smoke, STRICT at dev — needs dev run |
+| 9 | Ensemble Zarr cube (policy,draw,seed,quarter,variable) + coverage ≥0.85 + P(backfire) | **FAIL** | cube is terminal-only Parquet, no quarter dim, no Zarr (F3); coverage gate exists and is honest |
+| 10 | All 13 figures present | **FAIL** (clean run) | 8/13; figs 2,5,7,12,13 skip because `reports/eval/metrics.json` is only written by `eval_emulator`, which the driver never runs (F2) |
+| 11 | "Where this model fails" real content | PASS | verified in report.py + FINDINGS.md |
+| 12 | Dashboard launches + OOD banner fires | PENDING MANUAL VERIFICATION | prior session hand-verified (2026-07-21); this session will re-verify headless launch only and leave the hand-check to the user |
+| 13 | PROGRESS/DEVIATIONS/MINIMAL_PATH/README current | PASS (being maintained) | this file; DEVIATIONS gains rows in Phase B |
 
-## Divergences from PLAN.md
-See `docs/DEVIATIONS.md`; Phase 2 records the well-specified capacity control,
-mandatory market coverage, exact registry/market relations, fresh Regime-F episode,
-and total-regulation-onset estimand.
+## §2 sixteen-tool map — verified (all rows have module+script+test; renames noted)
+
+Rows 1–9, 11–13, 15–16: present and gate-passing (see audit reports). Renames vs Appendix G, functionality present:
+`agents/scripted.py`→`abm/policies.py`; `agents/sb3_agents.py`→`agents/ppo.py`; `training/train_policy.py`→`agents/train_rl` path;
+`ensemble/{scenarios,ray_ensemble}.py`→`ensemble/cube.py`; `sensitivity/salib_gsa.py`→`sensitivity/screen.py`;
+`sensitivity/optuna_search.py`→`sensitivity/policy_search.py` (repurposed — see F6); tests `test_ensemble_shapes/test_sensitivity/test_configs/test_determinism`
+→ `test_ensemble_contract/test_sensitivity_contract/test_config/test_seeds`. Genuinely absent: `sensitivity/bo_policy.py`,
+`scripts/optimize_policy.py` (Stage 14c), Optuna emulator-HP tuning (14b as specified), SAC path (`rl.algo` unread).
+
+## Prioritized fix plan (Phase B, strict phase order)
+
+**P0 — §18 blockers**
+- F1 [Phase 7, independent] Dockerfile/Dockerfile.cuda `--no-dev` core-only → sync all extras; compose MLflow URI → sqlite.
+- F2 [Phase 5→7, shared-core] Wire the §11 eval suite into the driver (new `evaluation` stage) so figs 2/5/7/12/13 have inputs on a clean run; assert 13/13 in the slow e2e.
+- F3 [Phase 6, shared-core] Rebuild ensemble cube as per-quarter xarray→Zarr with dims (policy,draw,seed,quarter,variable); keep terminal Parquet for DuckDB/dashboard; supersede DEVIATIONS row on terminal-only cube; figures/dashboard fan reads the cube.
+- F4 [Phase 4+7, shared-core] Make the recovery gate assertable: count hdi-90 coverage (≥12), assert β_peer must-miss under confounded (dev/full recovery run), fix report.py C1 verdict to count coverage.
+- F5 [Phase 6, independent] Wire Stage 10d (train_marl IPPO fallback) into the pipeline `marl` stage (smoke-scale budget), recorded DEGRADED-vs-RLlib as sanctioned.
+- F6 [Phase 6, independent] Build Stage 14c `sensitivity/bo_policy.py` + `scripts/optimize_policy.py` (BoTorch over the 5-param scripted schedule vs the ABM, `bo_evals` budget) and a real 14b Optuna emulator-HP tuning entry point; read `rl.algo` (SAC).
+
+**P1 — correctness (science-affecting)**
+- F7 [Phase 4/7] E-value from the real DML CI (refute.py fabricates one); pin JAX_PLATFORMS=cpu in scripts/calibrate.py unless calibration.device=gpu.
+- F8 [Phase 5] gru_baseline imagination feeds symlog aggregates to a natural-units encoder (world_model.py:361) — symexp first; fixes ablation fairness.
+- F9 [Phase 5, shared-core] Imagination-time node-path off-by-one (world_model.py:375) — align with teacher forcing; needs retrain (smoke retrain in pipeline re-run).
+- F10 [Phase 3, shared-core] Env model factory uses prior-center Theta; use posterior-mean theta when posterior.nc exists (biases exploitation gap + C6 otherwise).
+- F11 [Phase 3, shared-core] `reset(seed=None)` re-pins cfg.seed in AbmEnv/EmulatorEnv — derive from self.np_random so SB3 auto-resets vary.
+- F12 [Phase 3] Baseline outcome computed noise-free vs noisy stepped quarters — make consistent (backfire CS leg bias); dashboard CS/backfire leg same issue [Phase 7].
+- F13 [Phase 5] Checkpoint lacks n_firms; write it, drop inconsistent backfills.
+- F14 [Phase 6] Sensitivity 64-point emulator-vs-ABM check compares J vs terminal compliance — compare like-for-like with a tolerance; assert.
+- F15 [Phase 4] Implement `on_disagreement=recalibrate` (DiD moment penalty into 4b, one 4→5 re-run) — currently dead config.
+- F16 [Phase 4] Add-unobserved-common-cause refuter sweep; identify on the true DAG too ("report both").
+- F17 [Phase 3] Lobbying applies same-quarter vs PLAN's next-quarter — fix to lagged; budget-exhaustion collapse branch dead code — real threshold.
+
+**P2 — dead knobs / missing small features (implement or record)**
+- F18 [Phase 1] `--isolated-envs` is a silent no-op — implement minimally for real (per-group venv via UV_PROJECT_ENVIRONMENT) or record + hard-error; add configs/hydra/launcher yamls (+ joblib launcher dep); pin dev profile sizes explicitly in profile/dev.yaml; force_stage typo → error; driver caching tests.
+- F19 [Phase 3] `graph_obs`/`abm.vectorized` dead flags; EmulatorEnv missing from environments/__init__.
+- F20 [Phase 4] `calibration.method` dead (numpyro_bsl) — dispatch or record.
+- F21 [Phase 5] RL second-round corpus promised in datamodule docstring — implement or scope out; dead `emulator.epochs` knob; eval seeds from cfg.seed.
+- F22 [Phase 6] run_ensemble.py script enforces coverage gate; ray_cluster address honored; sensitivity.py summary clobber; MedianPruner trial.report.
+- F23 [Phase 2] Firewall regexes miss `from ..dgp import`/importlib forms; scripts/ never greped for oracle; store.write_observed silently skips unknown names.
+
+**P3 — honesty bookkeeping**
+- F24 DEVIATIONS rows for every unrecorded adaptation found by audit: peer-share denominator, phase-onset +1, Φ split + dead fine_cap, reward exit delta, PyG static/dynamic restructure, multiplicative hhi noise, 4σ sanity test, ground_truth.py oracle exception rationale, do()-at-generation, 5f de-attenuation + smoke n_do=16, backtest filter-not-train, DTW shuffled baseline, no torch.amp, draw=RNG-seed θ-marginal cube semantics, CI all-extras sync, CACHED status addition.
+- F25 report.py: fig01 filename mismatch; exploitation-gap list in failure section; fig8 95% band; report integration test slow-not-skip; tracker minors (TimeoutExpired, wandb git hash); seeding PYTHONHASHSEED no-op removal; ObservedWorld cache; lever_schedule + live-margin tests.
 
 ## Blocked / needs human
-Nothing blocked. The Stage-5 estimand/power tension was resolved by the user's decision
-(2026-07-20, "adapt graders to the DGP"): grade each estimator against the estimand it
-identifies (sealed tau_did_truth for the DiD; tau_true for the simulator), and validate
-estimator correctness on a full-panel world. Recorded in DEVIATIONS.
+Nothing blocked. One §18 item is deliberately left PENDING MANUAL VERIFICATION (dashboard OOD banner by hand — instructions below at delivery).
 
 ## Next action
-All seven phases are implemented and wired end to end. The full 17-stage pipeline runs
-green at profile=smoke: `run_pipeline.py profile=smoke` finishes with every stage
-DONE/CACHED (0 FAILED, 0 BLOCKED), writes all 13 figures + 3 Plotly HTMLs, and
-regenerates reports/FINDINGS.md with all five required sections. ruff + mypy (90 source
-files) + the fast suite are green; no NotImplementedError stubs remain in stages.py.
-
-**2026-07-22, Windows port verified**: work resumed on a Windows x86_64 machine (prior
-sessions were macOS arm64). Installed `uv`, ran `uv sync --all-extras` (386 packages,
-clean resolve), fixed two Windows-only bugs (cp1252 default encoding crashing
-FINDINGS.md read/write, and console logging crashing on `→`/`─` in log messages — both
-in DEVIATIONS.md), then ran the full gate: `ruff check`/`ruff format --check`/`mypy`
-all green, fast suite 210 passed/1 skipped, `make smoke` (17-stage pipeline + slow
-tests) exit 0 with all stages DONE, 13/13 figures, FINDINGS.md rebuilt (same verdicts as
-the macOS run: C2/C4/C5 SUPPORTED, C1/C3/C6 INCONCLUSIVE; numeric values shifted
-slightly, expected platform-typical float/RNG drift), 11/11 slow tests passed. The
-pipeline itself took ~26 minutes wall time on this box (calibration 523s + emulator
-797s dominate) versus the documented "<6 min" smoke budget — that budget is a Linux CI
-gate (GitHub Actions), not a local-machine promise; this is a timing observation for
-local Windows dev, not a gate failure, and is not yet root-caused (candidates: no fork
-on Windows so every JAX/subprocess stage pays process-creation overhead, no MKL/BLAS
-acceleration in this environment, Windows Defender real-time scanning of short-lived
-Python subprocesses).
-
-Remaining before a v0.1.0 tag (none block the smoke gate):
-- Dev/full-profile run: only profile=smoke has been exercised end to end. `make all`
-  (profile=dev) and the paper/full profile on a cluster have not been run; the coverage
-  >= 0.85 ensemble gate and the dev-profile claim verdicts (C1/C3/C6 are INCONCLUSIVE at
-  smoke by design) are still open. **Deliberately deferred 2026-07-21**: this machine
-  had swap at 94% and load 5.9/8 before the run would even start (8 CPU, ~8.6GB RAM, no
-  GPU); profile=dev scales population/emulator/RL/ensemble/sensitivity 10-125x over
-  smoke (e.g. emulator train_steps 300->30000), so it's a multi-hour, single-core-bound
-  job with real OOM risk on this box. User chose to hold off until memory is freed
-  rather than risk it. Resume with `make all` (or `python scripts/run_pipeline.py
-  profile=dev`) once the user gives the go-ahead; watch for OOM and for the same class
-  of checkpoint-shape bugs the smoke run surfaced (fixed so far: EmulatorEnv n_firms
-  backfill).
-- The Phase 7 `docker build` gate step needs Docker, which is not installed on this
-  machine at all. **Attempted 2026-07-21**: `brew install --cask docker` downloads and
-  installs the app but fails at a `sudo ln` step for a helper binary — needs an
-  interactive password prompt Claude cannot supply. User needs to either run `brew
-  install --cask docker` themselves in a real terminal (to enter the password when
-  prompted) or install Docker Desktop directly from docker.com, then Claude can build +
-  run the container gate. CI already builds/runs the image on every push, so this only
-  blocks a *local* verification, not correctness.
-- **OOD banner verified by hand 2026-07-21** (the Definition-of-Done item that says this
-  is "the only test that matters to the client"): started `streamlit run
-  scripts/dashboard.py` locally, drove the sliders with real click+keyboard interaction
-  (not just DOM value-setting, which silently doesn't trigger Streamlit's backend), and
-  confirmed the banner is genuinely reactive both ways — enforcement=1.0/targeting=1.0
-  -> red "OUT OF DISTRIBUTION: Mahalanobis distance 3.16 exceeds..."; back to
-  enforcement=0.5/targeting=-0.5 -> green "In distribution: ... distance 2.02". Confirms
-  `ood_mahalanobis` and the dashboard wiring are both correct.
-- Stage 12 (Hydra) and 13 (tracking) were threaded through Phase 1 and are functioning;
-  they have no dedicated stage rows here beyond that.
+Phase B: work Phases 1→7 applying F1–F25 in phase order, gate after each phase, commit at each green gate.
+Then Phase C: full §18 re-run, `make all` (profile=dev) on this box (multi-hour on 4 cores — run in background),
+docker build + container smoke, publish per instructions.
