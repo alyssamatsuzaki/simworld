@@ -95,6 +95,34 @@ def _supply_graph(
     return g
 
 
+def _add_spurious_edges(
+    obs: nx.DiGraph | nx.Graph,
+    true_g: nx.DiGraph | nx.Graph,
+    n_spurious: int,
+    n: int,
+    rng: np.random.Generator,
+) -> None:
+    """Add exactly `n_spurious` edges absent from the TRUE graph.
+
+    A draw that lands on a self-loop, a true edge (including a dropped one — that
+    would restore truth, not add noise), or an already-added spurious edge is
+    resampled rather than silently skipped, so the observed graph carries the full
+    §7.2 spurious rate instead of an upper bound. Sequential draws from the shared
+    generator keep this deterministic; the attempt cap only guards against a
+    pathologically dense graph and is never reached at §7.2 densities.
+    """
+    added = 0
+    attempts = 0
+    max_attempts = 1000 * max(n_spurious, 1)
+    while added < n_spurious and attempts < max_attempts:
+        attempts += 1
+        a, b = int(rng.integers(n)), int(rng.integers(n))
+        if a == b or true_g.has_edge(a, b) or obs.has_edge(a, b):
+            continue
+        obs.add_edge(a, b)
+        added += 1
+
+
 def _degrade_directed(
     g: nx.DiGraph, drop: float, spurious: float, n: int, rng: np.random.Generator
 ) -> nx.DiGraph:
@@ -105,11 +133,7 @@ def _degrade_directed(
     for (a, b), k in zip(edges, keep, strict=True):
         if k:
             obs.add_edge(a, b)
-    n_spurious = int(spurious * len(edges))
-    for _ in range(n_spurious):
-        a, b = int(rng.integers(n)), int(rng.integers(n))
-        if a != b and not g.has_edge(a, b):
-            obs.add_edge(a, b)
+    _add_spurious_edges(obs, g, int(spurious * len(edges)), n, rng)
     return obs
 
 
@@ -123,10 +147,7 @@ def _degrade_undirected(
     for (a, b), k in zip(edges, keep, strict=True):
         if k:
             obs.add_edge(a, b)
-    for _ in range(int(spurious * len(edges))):
-        a, b = int(rng.integers(n)), int(rng.integers(n))
-        if a != b and not g.has_edge(a, b):
-            obs.add_edge(a, b)
+    _add_spurious_edges(obs, g, int(spurious * len(edges)), n, rng)
     return obs
 
 

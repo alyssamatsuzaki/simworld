@@ -94,6 +94,18 @@ def test_validation_rejects_extra_and_nonfinite_columns(world: RegWorldConfig) -
             validate_table(bad, FIRM_PANEL)
 
 
+def test_write_observed_rejects_unspecced_table(world: RegWorldConfig, tmp_path: Path) -> None:
+    """An observed table without a schema spec must never be written unvalidated —
+    validate_table's unexpected-column rejection is part of the leakage guarantee."""
+    from regworld.data.store import write_observed
+
+    cfg = world.model_copy(deep=True)
+    cfg.paths.data = str(tmp_path / "data")
+    with pytest.raises(ValueError, match="no schema spec"):
+        write_observed(cfg, "mystery_table", pl.DataFrame({"a": [1]}))
+    assert not (tmp_path / "data" / "observed" / "mystery_table.parquet").exists()
+
+
 def test_registry_has_no_answer_key_columns(world: RegWorldConfig) -> None:
     registry = read_observed(world, "firm_registry")
     forbidden = {"capacity", "z", "capacity_z", "beta", "size"}  # continuous size is hidden too
@@ -101,7 +113,14 @@ def test_registry_has_no_answer_key_columns(world: RegWorldConfig) -> None:
 
 
 def test_observation_model_sanity(world: RegWorldConfig) -> None:
-    """Observed aggregates track the oracle truth within noise (3-4 sigma_obs)."""
+    """Observed aggregates track the oracle truth within noise (§10 Stage 1: 3 sigma_obs).
+
+    The criterion is a max over the 12 observed quarters, so 3 sigma is not
+    guaranteed for arbitrary seeds (~3% failure per world) — but the realized
+    draws are deterministic per seed, and a sweep over the 5 CI seeds (0-4,
+    configs/config.yaml `seeds`) tops out at 2.67 sigma, so the plan's stated
+    tolerance holds where CI runs.
+    """
     agg = read_observed(world, "aggregate_series").sort("quarter")
     truth = read_oracle(world, "regime_p_full")
     true_rates = (
@@ -111,7 +130,7 @@ def test_observation_model_sanity(world: RegWorldConfig) -> None:
         .sort("quarter")
     )
     diff = np.abs(agg["compliance_rate_obs"].to_numpy() - true_rates.to_numpy()[:, 1].astype(float))
-    assert diff.max() < 4 * world.dgp.sigma_obs + 1e-6
+    assert diff.max() < 3 * world.dgp.sigma_obs + 1e-6
 
 
 def test_compliance_actually_rises_in_regime_p(world: RegWorldConfig) -> None:
