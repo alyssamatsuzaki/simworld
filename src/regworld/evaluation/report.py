@@ -587,6 +587,22 @@ def build_findings(cfg: RegWorldConfig) -> Path:
         )
     lines.append("")
 
+    # Manual-verification note (§18): the OOD-banner hand-check is the one DoD
+    # item that cannot be verified autonomously. The dashboard launches headless
+    # without error; the banner's reactivity is confirmed by hand.
+    lines.append("")
+    lines.append("### Pending manual verification")
+    lines.append("")
+    lines.append(
+        "- **Streamlit OOD banner (§18):** launch `make dashboard`, set enforcement "
+        "and targeting sliders to 1.0 — the banner must turn red "
+        '("OUT OF DISTRIBUTION: Mahalanobis distance … exceeds …"); return them to '
+        'enforcement 0.5 / targeting -0.5 and it must go green ("In distribution"). '
+        "The dashboard is confirmed to launch headless without error; this reactivity "
+        "check is the single item that requires a human."
+    )
+    lines.append("")
+
     # =========================================================================
     # SECTION 5: Run manifest
     # =========================================================================
