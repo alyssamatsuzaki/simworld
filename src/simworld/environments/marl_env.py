@@ -10,7 +10,13 @@ from gymnasium import spaces
 from numpy.typing import NDArray
 from pettingzoo import ParallelEnv
 
-from simworld.rules import Constants, PolicyLevers, QuarterOutcome, regulator_reward
+from simworld.rules import (
+    Constants,
+    PolicyLevers,
+    QuarterOutcome,
+    objective_weights,
+    regulator_reward,
+)
 from simworld.types import SimWorldConfig
 
 from .abm_env import (
@@ -224,13 +230,7 @@ class RegulationMARLEnv(ParallelEnv):
         self._outcome = _step_backend(self.model, policy, strategic)
         self._elapsed += 1
         self._cumulative_audits += self._outcome.n_audits
-        weights = cast(
-            tuple[float, float, float, float, float, float],
-            tuple(
-                float(getattr(self.cfg.objective, name))
-                for name in ("w_c", "w_h", "w_s", "w_e", "w_t", "w_x")
-            ),
-        )
+        weights = objective_weights(self.cfg)
         constants = cast(Constants, getattr(self.model, "constants", Constants()))
         rewards = {
             "regulator_0": float(

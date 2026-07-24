@@ -436,13 +436,7 @@ def _abm_episode_return(cfg: SimWorldConfig, truth_run: TensorTrajectory) -> flo
     always the recomputed reward). Same weights, same baseline convention as
     ``EmulatorEnv.step`` — this makes the cross-check a like-for-like J comparison.
     """
-    weights = cast(
-        tuple[float, float, float, float, float, float],
-        tuple(
-            float(getattr(cfg.objective, name))
-            for name in ("w_c", "w_h", "w_s", "w_e", "w_t", "w_x")
-        ),
-    )
+    weights = rules.objective_weights(cfg)
     constants = rules.Constants()
 
     def _to_outcome(o: object) -> rules.QuarterOutcome:

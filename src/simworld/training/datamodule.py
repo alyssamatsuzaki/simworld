@@ -206,9 +206,7 @@ def collect_episode(
     action_arr[1:] = schedule.astype(np.float32)
 
     deciles = _size_deciles(firms.size)
-    weights: tuple[float, float, float, float, float, float] = tuple(  # type: ignore[assignment]
-        float(getattr(cfg.objective, name)) for name in ("w_c", "w_h", "w_s", "w_e", "w_t", "w_x")
-    )
+    weights = rules.objective_weights(cfg)
     baseline = aggregate_to_outcome(agg_arr[0], firms.n)
     fine_fraction = min(const.fine_rate, const.fine_cap)
     prev_revenue = world.initial_state.revenue.copy()

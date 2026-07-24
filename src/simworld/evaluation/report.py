@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from pathlib import Path
 from typing import Any
 
@@ -185,7 +186,7 @@ def build_findings(cfg: SimWorldConfig) -> Path:
     _emulator_untrustworthy = (
         _emulator_coverage is not None
         and isinstance(_emulator_coverage, int | float)
-        and _emulator_coverage == _emulator_coverage  # not NaN
+        and not math.isnan(_emulator_coverage)
         and _emulator_coverage < _coverage_threshold
     )
     _coverage_caveat = (

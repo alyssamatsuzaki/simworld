@@ -20,7 +20,7 @@ import torch
 from numpy.typing import NDArray
 
 from simworld.models.world_model import ModelState, WorldModel
-from simworld.rules import Constants, regulator_reward
+from simworld.rules import Constants, objective_weights, regulator_reward
 from simworld.training.datamodule import aggregate_dim
 from simworld.types import SimWorldConfig
 
@@ -202,14 +202,10 @@ class EmulatorEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
         if self.cfg.emulator.reward_from_outcomes:
             from simworld.training.datamodule import aggregate_to_outcome
 
-            weights = tuple(
-                float(getattr(self.cfg.objective, name))
-                for name in ("w_c", "w_h", "w_s", "w_e", "w_t", "w_x")
-            )
             reward = regulator_reward(
                 aggregate_to_outcome(self._aggregates, self._n_firms),
                 aggregate_to_outcome(self._baseline, self._n_firms),
-                cast(tuple[float, float, float, float, float, float], weights),
+                objective_weights(self.cfg),
                 Constants(),
                 self._n_firms,
             )

@@ -1,5 +1,13 @@
 # SimWorld
 
+[![CI](https://github.com/alyssamatsuzaki/simworld/actions/workflows/ci.yml/badge.svg)](https://github.com/alyssamatsuzaki/simworld/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12-blue.svg)](pyproject.toml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Code style: ruff](https://img.shields.io/badge/code%20style-ruff-261230.svg)](https://github.com/astral-sh/ruff)
+[![Typed: mypy](https://img.shields.io/badge/typed-mypy-2a6db2.svg)](https://mypy-lang.org/)
+[![Package manager: uv](https://img.shields.io/badge/deps-uv-de5fe9.svg)](https://github.com/astral-sh/uv)
+[![Reproducible: make smoke](https://img.shields.io/badge/reproducible-make%20smoke%20%3C6min-success.svg)](#7-reproducing-the-experiments)
+
 **A synthetic world model of regulatory propagation, built as the maximal sixteen-tool
 research stack — and graded, end to end, against a ground truth it planted itself.**
 
@@ -22,6 +30,36 @@ make setup     # uv sync (core + all extras) + pre-commit hooks
 make smoke     # the entire pipeline, CPU-only, reproducible in < 6 minutes  (this is the CI gate)
 make all       # the full-scale "dev" run (cluster-class compute)
 ```
+
+---
+
+## At a glance
+
+|  |  |
+|---|---|
+| **What** | A full world-modeling pipeline that *invents* a regulated economy — firms, consumers, associations, a regulator — with a known ground truth, then runs Bayesian calibration, causal inference, a learned emulator, and an RL policy search over it and **grades every estimate against the answer key**. |
+| **Why** | To demonstrate a complete research stack that recovers the truth when it is recoverable and **fails legibly** when it is not — the opposite of a demo that only ever shows its best case. |
+| **The headline** | Naive observational inference gets the causal effect wrong by ~3× (0.12 vs. 0.41 truth); the calibrated do-intervention path recovers it (0.37). *Observational inference is provably wrong here, and the pipeline proves it.* |
+| **Reproducible** | The entire pipeline runs CPU-only in **under 6 minutes** via `make smoke` — the same command CI runs on every push. |
+
+**Tech stack** — 16 tools, one driver:
+`Mesa` · `PyTorch` · `PyTorch Geometric` · `NumPyro` · `PyMC` · `DoWhy` · `EconML` · `Gymnasium` · `PettingZoo` · `Stable-Baselines3` · `TorchRL` · `Ray` · `Hydra` · `MLflow` · `Plotly` · `Streamlit` — orchestrated with `uv`, `ruff`, `mypy`, `pytest`, `Docker`, and GitHub Actions.
+
+**Claim scorecard (smoke profile)** — SUPPORTED where the evidence needs no research-scale compute, honestly INCONCLUSIVE (never faked) where it does:
+
+| C1 recovery | **C2 causal gate** | C3 emulator | **C4 sensitivity** | C5 backfire | **C6 MARL ablation** |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| ⏳ inconclusive | ✅ **SUPPORTED** | ⏳ inconclusive | ✅ **SUPPORTED** | ⏳ inconclusive | ✅ **SUPPORTED** |
+
+The three ⏳ claims are **compute-bound, not code-bound** — their machinery is wired and tested; the verdicts sharpen at `dev` scale. See [§9 Results](#9-results) for the full breakdown and [`reports/FINDINGS.md`](reports/FINDINGS.md) for the graded output.
+
+**Live demo & outputs.** A clean run produces **13 figures** (`reports/figures/`) plus interactive Plotly HTML (latent PCA, network diffusion, trajectory fans). For an interactive tour — including the out-of-distribution safety banner — launch the Streamlit dashboard:
+
+```bash
+make dashboard    # http://localhost:8501  — policy sliders, trajectory fans, OOD detector
+```
+
+> _Screenshot/GIF placeholder — capture the dashboard and the four-number figure here for the repo landing view._
 
 ---
 
@@ -249,7 +287,12 @@ cluster portability.
 
 ```bash
 make setup        # uv sync with core + all extras (bayes, causal, rl, opt, app, dev) + pre-commit hooks
+cp .env.example .env   # optional — SimWorld runs fully offline with zero secrets by default
 ```
+
+Everything runs with **no credentials and no network**. The `.env` file is only needed if you
+opt into a networked backend (Weights & Biases, a remote Ray cluster) or want to relocate the
+artifact root; see [`.env.example`](.env.example) for the (all-optional) variables.
 
 If a heavy optional group fails to resolve on your platform, it is recorded and the affected
 stages degrade rather than crash. For a minimal core-only environment (lint / typecheck / fast
@@ -734,6 +777,29 @@ result. [`PROGRESS.md`](PROGRESS.md) is the current build status.
 | [`docs/DEVIATIONS.md`](docs/DEVIATIONS.md) | Every place the implementation followed a library over the plan, one line of rationale each. |
 | [`docs/REAL_DATA.md`](docs/REAL_DATA.md) | The seam for swapping synthetic ground truth for a real firm/consumer panel. |
 | [`CLAUDE.md`](CLAUDE.md) | The non-negotiables (Mesa ≥3.0, Gymnasium ≥1.0, the firewall, seeded Generators, no print in src). |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | How to set up, the enforced ground rules (the firewall, "never stub a gate"), and PR conventions. |
+| [`SECURITY.md`](SECURITY.md) · [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Vulnerability reporting and community expectations. |
+
+---
+
+## 14. Contributing & license
+
+Contributions are welcome — please read [`CONTRIBUTING.md`](CONTRIBUTING.md) first; it covers
+the enforced ground rules (chiefly the leakage firewall and the "never stub a stage to pass a
+gate" ethos) and the PR workflow. This project is released under the
+[MIT License](LICENSE), and participation is governed by our
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+If you use SimWorld in academic work, please cite it:
+
+```bibtex
+@software{simworld,
+  author  = {Matsuzaki, Alyssa},
+  title   = {SimWorld: A Synthetic World Model of Regulatory Propagation},
+  year    = {2026},
+  url     = {https://github.com/alyssamatsuzaki/simworld}
+}
+```
 
 ---
 

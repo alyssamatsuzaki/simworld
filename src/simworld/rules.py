@@ -12,6 +12,7 @@ in torch under an agreement test.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Any
 
 import numpy as np
 from scipy import sparse
@@ -631,6 +632,24 @@ def regulator_reward(
         - w_e * outcome.enforcement_cost / max(e_max, 1e-9)
         + w_t * (outcome.mean_trust - baseline.mean_trust)
         - w_x * max(0.0, outcome.exit_rate_cum - baseline.exit_rate_cum)
+    )
+
+
+def objective_weights(cfg: Any) -> tuple[float, float, float, float, float, float]:
+    """The six regulator-objective weights (§7.6) as a typed tuple, in reward order.
+
+    Read from ``cfg.objective`` in exactly one place so the env, datamodule, and
+    sensitivity paths cannot drift on the weight ordering or the float cast that
+    ``regulator_reward`` expects.
+    """
+    obj = cfg.objective
+    return (
+        float(obj.w_c),
+        float(obj.w_h),
+        float(obj.w_s),
+        float(obj.w_e),
+        float(obj.w_t),
+        float(obj.w_x),
     )
 
 

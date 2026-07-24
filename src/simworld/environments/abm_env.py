@@ -20,6 +20,7 @@ from simworld.rules import (
     Theta,
     WorldState,
     hhi,
+    objective_weights,
     regulator_reward,
 )
 from simworld.types import SimWorldConfig
@@ -241,10 +242,7 @@ class AbmEnv(gym.Env[NDArray[np.float32], NDArray[np.float32]]):
         self._outcome = _step_backend(self.model, policy)
         self._elapsed += 1
         self._cumulative_audits += self._outcome.n_audits
-        weights = tuple(
-            float(getattr(self.cfg.objective, name))
-            for name in ("w_c", "w_h", "w_s", "w_e", "w_t", "w_x")
-        )
+        weights = objective_weights(self.cfg)
         constants = cast(Constants, getattr(self.model, "constants", Constants()))
         reward = regulator_reward(
             self._outcome,

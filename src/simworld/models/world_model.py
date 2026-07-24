@@ -63,6 +63,14 @@ class Decoded:
 
 
 class WorldModel(nn.Module):
+    """The graph-RSSM world model: encoder + macro RSSM + micro (node) recurrence + heads.
+
+    A single class backs all three §11 ablation arches, selected by ``arch``:
+    ``rssm_gnn`` (full model with graph message passing), ``rssm_flat`` (RSSM without
+    message passing), and ``gru_baseline`` (deterministic GRU on aggregates, no latents
+    or graph). See the module docstring for the imagination-time micro approximation.
+    """
+
     def __init__(
         self,
         *,
