@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from regworld.tracking import MlflowTracker, NullTracker
+from simworld.tracking import MlflowTracker, NullTracker
 
 
 def test_null_tracker_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -29,7 +29,7 @@ def test_null_tracker_writes_nothing(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_mlflow_tracker_writes_run(tmp_path: Path) -> None:
     # sqlite backend: the file store is in maintenance mode in mlflow 3.x (see DEVIATIONS.md)
     db = tmp_path / "mlflow.db"
-    t = MlflowTracker(f"sqlite:///{db}", "regworld-test")
+    t = MlflowTracker(f"sqlite:///{db}", "simworld-test")
     t.start("unit", {"nested": {"k": 1}, "seed": 0})
     t.log_metrics({"loss": 0.5}, step=1)
     t.log_metrics({"bad": float("nan")})  # silently dropped, never crashes
@@ -37,6 +37,6 @@ def test_mlflow_tracker_writes_run(tmp_path: Path) -> None:
     assert db.exists()
     import mlflow
 
-    runs = mlflow.search_runs(experiment_names=["regworld-test"])
+    runs = mlflow.search_runs(experiment_names=["simworld-test"])
     assert len(runs) == 1
     assert runs.iloc[0]["metrics.loss"] == 0.5

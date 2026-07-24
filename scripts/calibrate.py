@@ -16,10 +16,10 @@ import numpy as np
 import polars as pl
 from omegaconf import DictConfig
 
-from regworld.logging_conf import setup_logging
-from regworld.rules import Theta
-from regworld.seeding import seed_everything
-from regworld.types import RegWorldConfig, validate_config
+from simworld.logging_conf import setup_logging
+from simworld.rules import Theta
+from simworld.seeding import seed_everything
+from simworld.types import SimWorldConfig, validate_config
 
 log = logging.getLogger(__name__)
 
@@ -39,11 +39,11 @@ def _micro_worker(config_path: Path) -> None:
     """JAX/PyMC worker; invoked as a process separate from Torch simulation."""
     import arviz as az
 
-    from regworld.calibration.diagnostics import run_micro_diagnostics
-    from regworld.calibration.micro_numpyro import fit_micro_numpyro, load_micro_data
-    from regworld.calibration.micro_pymc import compare_marginals, fit_micro_pymc
+    from simworld.calibration.diagnostics import run_micro_diagnostics
+    from simworld.calibration.micro_numpyro import fit_micro_numpyro, load_micro_data
+    from simworld.calibration.micro_pymc import compare_marginals, fit_micro_pymc
 
-    cfg = RegWorldConfig.model_validate_json(config_path.read_text())
+    cfg = SimWorldConfig.model_validate_json(config_path.read_text())
     output_dir = Path(cfg.paths.root) / "calibration"
     output_dir.mkdir(parents=True, exist_ok=True)
     data = load_micro_data(cfg)
@@ -95,17 +95,17 @@ def _micro_worker(config_path: Path) -> None:
 
 
 def _micro_means(micro: Any) -> dict[str, float]:
-    from regworld.calibration.micro_numpyro import MICRO_PARAMETER_NAMES
+    from simworld.calibration.micro_numpyro import MICRO_PARAMETER_NAMES
 
     return {name: float(np.asarray(micro.posterior[name]).mean()) for name in MICRO_PARAMETER_NAMES}
 
 
-def _run(cfg: RegWorldConfig) -> list[Path]:
+def _run(cfg: SimWorldConfig) -> list[Path]:
     import arviz as az
 
-    from regworld.calibration.diagnostics import combine_posteriors
-    from regworld.calibration.macro_smc import MACRO_PARAMETER_NAMES, fit_macro_smc
-    from regworld.calibration.summaries import summary_statistics
+    from simworld.calibration.diagnostics import combine_posteriors
+    from simworld.calibration.macro_smc import MACRO_PARAMETER_NAMES, fit_macro_smc
+    from simworld.calibration.summaries import summary_statistics
 
     output_dir = Path(cfg.paths.root) / "calibration"
     output_dir.mkdir(parents=True, exist_ok=True)

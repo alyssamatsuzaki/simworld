@@ -11,9 +11,9 @@ import sys
 import hydra
 from omegaconf import DictConfig
 
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.seeding import seed_everything
-from regworld.types import validate_config
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.seeding import seed_everything
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 
@@ -24,7 +24,7 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg_obj.seed)
     setup_logging()
 
-    from regworld.evaluation.report import build_findings
+    from simworld.evaluation.report import build_findings
 
     try:
         findings_path = build_findings(cfg_obj)

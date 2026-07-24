@@ -8,7 +8,7 @@ import pytest
 from hydra import compose, initialize_config_dir
 from omegaconf import DictConfig
 
-from regworld.types import RegWorldConfig, validate_config
+from simworld.types import SimWorldConfig, validate_config
 
 CONFIG_DIR = str(Path(__file__).resolve().parent.parent / "configs")
 
@@ -19,7 +19,7 @@ def compose_cfg(*overrides: str) -> DictConfig:
 
 
 @pytest.fixture()
-def smoke_cfg(tmp_path: Path) -> RegWorldConfig:
+def smoke_cfg(tmp_path: Path) -> SimWorldConfig:
     """Validated smoke-profile config with artifact/report roots inside tmp_path."""
     cfg = validate_config(compose_cfg("profile=smoke", "tracking=none"))
     cfg.paths.root = str(tmp_path / "artifacts")

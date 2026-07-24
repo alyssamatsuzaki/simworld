@@ -6,14 +6,14 @@ import numpy as np
 import pytest
 import torch
 
-from regworld.graphs.analyze import analyze_graphs
-from regworld.graphs.build import RegGraphs, build_graphs
-from regworld.types import RegWorldConfig, validate_config
+from simworld.graphs.analyze import analyze_graphs
+from simworld.graphs.build import RegGraphs, build_graphs
+from simworld.types import SimWorldConfig, validate_config
 
 from .conftest import compose_cfg
 
 
-def _world_inputs(cfg: RegWorldConfig, seed: int = 0) -> dict[str, np.ndarray]:
+def _world_inputs(cfg: SimWorldConfig, seed: int = 0) -> dict[str, np.ndarray]:
     rng = np.random.default_rng(seed)
     n, s = cfg.population.n_firms, cfg.population.n_consumer_segments
     size = rng.lognormal(0, 1.1, n)
@@ -32,7 +32,7 @@ def _world_inputs(cfg: RegWorldConfig, seed: int = 0) -> dict[str, np.ndarray]:
 
 
 @pytest.fixture(scope="module")
-def confounded() -> tuple[RegWorldConfig, RegGraphs, np.ndarray]:
+def confounded() -> tuple[SimWorldConfig, RegGraphs, np.ndarray]:
     cfg = validate_config(compose_cfg("profile=smoke", "dgp=confounded"))
     inputs = _world_inputs(cfg)
     rng = np.random.default_rng(1)
@@ -101,7 +101,7 @@ def test_market_covers_every_firm_and_keeps_preferential_extras(confounded: tupl
 def test_static_feature_contract_excludes_dynamic_state(confounded: tuple) -> None:
     import polars as pl
 
-    from regworld.graphs.to_pyg import (
+    from simworld.graphs.to_pyg import (
         node_feature_contract,
         static_feature_shapes,
         static_node_features,
@@ -141,8 +141,8 @@ def test_pyg_round_trip_and_heteroconv_forward(confounded: tuple) -> None:
     import polars as pl
     from torch_geometric.nn import HeteroConv, SAGEConv
 
-    from regworld.graphs.build import edges_frame
-    from regworld.graphs.to_pyg import hetero_from_edges
+    from simworld.graphs.build import edges_frame
+    from simworld.graphs.to_pyg import hetero_from_edges
 
     cfg, reg, _ = confounded
     n, s = cfg.population.n_firms, cfg.population.n_consumer_segments
@@ -194,8 +194,8 @@ def test_pyg_round_trip_and_heteroconv_forward(confounded: tuple) -> None:
 def test_pyg_rejects_market_with_uncovered_firm(confounded: tuple) -> None:
     import polars as pl
 
-    from regworld.graphs.build import edges_frame
-    from regworld.graphs.to_pyg import hetero_from_edges
+    from simworld.graphs.build import edges_frame
+    from simworld.graphs.to_pyg import hetero_from_edges
 
     cfg, reg, _ = confounded
 

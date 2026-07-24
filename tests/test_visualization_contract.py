@@ -16,16 +16,16 @@ import numpy as np
 import polars as pl
 import pytest
 
-from regworld.types import RegWorldConfig
-from regworld.visualization import figures as figures_mod
-from regworld.visualization import interactive as interactive_mod
-from regworld.visualization.dashboard import (
+from simworld.types import SimWorldConfig
+from simworld.visualization import figures as figures_mod
+from simworld.visualization import interactive as interactive_mod
+from simworld.visualization.dashboard import (
     OOD_THRESHOLD,
     _fallback_train_actions,
     _match_grid_policy,
     ood_mahalanobis,
 )
-from regworld.visualization.figures import FIGURE_FUNCS, make_all_figures
+from simworld.visualization.figures import FIGURE_FUNCS, make_all_figures
 
 from .conftest import compose_cfg
 
@@ -54,8 +54,8 @@ def test_ood_threshold_separates_the_two_cases() -> None:
     assert ood_mahalanobis(np.array([5.0, 3.0, -4.0, 6.0]), train_actions) > OOD_THRESHOLD
 
 
-def test_fallback_train_actions_stays_inside_the_action_box(smoke_cfg: RegWorldConfig) -> None:
-    from regworld.visualization._io import action_bounds
+def test_fallback_train_actions_stays_inside_the_action_box(smoke_cfg: SimWorldConfig) -> None:
+    from simworld.visualization._io import action_bounds
 
     low, high = action_bounds()
     draws = _fallback_train_actions(smoke_cfg, n_samples=64)
@@ -64,7 +64,7 @@ def test_fallback_train_actions_stays_inside_the_action_box(smoke_cfg: RegWorldC
 
 
 def test_match_grid_policy_finds_exact_and_rejects_far() -> None:
-    from regworld.abm.policies import STATIC_POLICIES
+    from simworld.abm.policies import STATIC_POLICIES
 
     exact = STATIC_POLICIES["targeted"].as_array()
     assert _match_grid_policy(exact) == "targeted"
@@ -77,7 +77,7 @@ def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.write_text(json.dumps(payload))
 
 
-def test_fig_four_numbers_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_four_numbers_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_json(
         Path(smoke_cfg.paths.root) / "causal" / "four_numbers.json",
         {
@@ -97,13 +97,13 @@ def test_fig_four_numbers_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) ->
     assert out is not None and out.is_file()
 
 
-def test_fig_four_numbers_skips_when_missing(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_four_numbers_skips_when_missing(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     fig_dir = tmp_path / "figs"
     fig_dir.mkdir()
     assert figures_mod.fig_four_numbers(smoke_cfg, fig_dir) is None
 
 
-def test_fig_event_study_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_event_study_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_json(
         Path(smoke_cfg.paths.root) / "causal" / "causal_estimates.json",
         {
@@ -122,7 +122,7 @@ def test_fig_event_study_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> 
     assert out is not None and out.is_file()
 
 
-def test_fig_sensitivity_tornado_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_sensitivity_tornado_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_json(
         Path(smoke_cfg.paths.root) / "sensitivity" / "indices.json",
         {
@@ -138,7 +138,7 @@ def test_fig_sensitivity_tornado_hermetic(smoke_cfg: RegWorldConfig, tmp_path: P
     assert out is not None and out.is_file()
 
 
-def test_fig_calibration_curve_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_calibration_curve_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_json(
         Path(smoke_cfg.paths.reports) / "eval" / "metrics.json",
         {
@@ -161,7 +161,7 @@ def test_fig_calibration_curve_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Pat
     assert out is not None and out.is_file()
 
 
-def _write_synthetic_cube(cfg: RegWorldConfig) -> Path:
+def _write_synthetic_cube(cfg: SimWorldConfig) -> Path:
     rng = np.random.default_rng(0)
     rows = []
     for policy, base_compliance, base_hhi, backfire in (
@@ -188,7 +188,7 @@ def _write_synthetic_cube(cfg: RegWorldConfig) -> Path:
     return out
 
 
-def test_fig_pareto_frontier_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_pareto_frontier_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_synthetic_cube(smoke_cfg)
     fig_dir = tmp_path / "figs"
     fig_dir.mkdir()
@@ -196,7 +196,7 @@ def test_fig_pareto_frontier_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path)
     assert out is not None and out.is_file()
 
 
-def test_fig_policy_comparison_j_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_policy_comparison_j_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_synthetic_cube(smoke_cfg)
     _write_json(
         Path(smoke_cfg.paths.reports) / "eval" / "metrics.json",
@@ -216,7 +216,7 @@ def test_fig_policy_comparison_j_hermetic(smoke_cfg: RegWorldConfig, tmp_path: P
     assert out is not None and out.is_file()
 
 
-def test_fig_ood_degradation_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path) -> None:
+def test_fig_ood_degradation_hermetic(smoke_cfg: SimWorldConfig, tmp_path: Path) -> None:
     _write_json(
         Path(smoke_cfg.paths.reports) / "eval" / "metrics.json",
         {
@@ -235,13 +235,13 @@ def test_fig_ood_degradation_hermetic(smoke_cfg: RegWorldConfig, tmp_path: Path)
     assert out is not None and out.is_file()
 
 
-def test_interactive_trajectory_fans_hermetic(smoke_cfg: RegWorldConfig) -> None:
+def test_interactive_trajectory_fans_hermetic(smoke_cfg: SimWorldConfig) -> None:
     _write_synthetic_cube(smoke_cfg)
     fig = interactive_mod.trajectory_fans_figure(smoke_cfg)
     assert fig is not None
 
 
-def test_interactive_trajectory_fans_skips_when_missing(smoke_cfg: RegWorldConfig) -> None:
+def test_interactive_trajectory_fans_skips_when_missing(smoke_cfg: SimWorldConfig) -> None:
     assert interactive_mod.trajectory_fans_figure(smoke_cfg) is None
 
 
@@ -252,14 +252,14 @@ def test_figure_registry_has_thirteen_entries() -> None:
 
 
 def test_make_all_figures_degrades_to_empty_without_any_artifacts(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     """No artifacts at all under the tmp root -> an honest empty list, never a crash."""
     assert make_all_figures(smoke_cfg) == []
 
 
 def test_make_all_figures_partial_artifacts_writes_only_what_it_can(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     _write_json(
         Path(smoke_cfg.paths.root) / "causal" / "four_numbers.json",
@@ -276,7 +276,7 @@ def test_make_all_figures_partial_artifacts_writes_only_what_it_can(
 @pytest.mark.slow
 def test_make_all_figures_end_to_end_on_real_artifacts() -> None:
     """Full run against the committed checkpoint, posterior, cube, and eval report."""
-    from regworld.types import validate_config
+    from simworld.types import validate_config
 
     cfg = validate_config(compose_cfg("profile=smoke", "tracking=none"))
     written = make_all_figures(cfg)
@@ -286,7 +286,7 @@ def test_make_all_figures_end_to_end_on_real_artifacts() -> None:
 
 @pytest.mark.slow
 def test_load_default_config_and_ood_banner_on_real_artifacts() -> None:
-    from regworld.visualization.dashboard import _train_action_distribution, load_default_config
+    from simworld.visualization.dashboard import _train_action_distribution, load_default_config
 
     cfg = load_default_config("smoke")
     train_actions = _train_action_distribution(cfg)

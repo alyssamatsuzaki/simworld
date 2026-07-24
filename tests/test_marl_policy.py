@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 from gymnasium.utils.env_checker import check_env
 
-from regworld.agents.marl import (
+from simworld.agents.marl import (
     BACKEND,
     C6_HEADLINE_METRICS,
     C6_METRICS,
@@ -30,13 +30,13 @@ from regworld.agents.marl import (
     rule_based_firm_fn,
     train_marl,
 )
-from regworld.environments.marl_env import RegulationMARLEnv
-from regworld.types import RegWorldConfig
+from simworld.environments.marl_env import RegulationMARLEnv
+from simworld.types import SimWorldConfig
 
 from .test_env_contract import FakeRegulationModel, fake_factory
 
 
-def _cfg(smoke_cfg: RegWorldConfig, *, horizon: int = 4, n_strategic: int = 3) -> RegWorldConfig:
+def _cfg(smoke_cfg: SimWorldConfig, *, horizon: int = 4, n_strategic: int = 3) -> SimWorldConfig:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.horizon_quarters = horizon
     cfg.env.n_strategic_firms = n_strategic
@@ -48,7 +48,7 @@ def _cfg(smoke_cfg: RegWorldConfig, *, horizon: int = 4, n_strategic: int = 3) -
 # --------------------------------------------------------------------------- #
 
 
-def test_encoder_flattens_dict_observations_into_unit_box(smoke_cfg: RegWorldConfig) -> None:
+def test_encoder_flattens_dict_observations_into_unit_box(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg)
     env = RegulationMARLEnv(cfg, model_factory=fake_factory())
     observations, _ = env.reset(seed=3)
@@ -70,7 +70,7 @@ def test_encoder_flattens_dict_observations_into_unit_box(smoke_cfg: RegWorldCon
 
 
 @pytest.mark.parametrize("role", ["regulator", "firm"])
-def test_single_agent_view_passes_gymnasium_checker(smoke_cfg: RegWorldConfig, role: str) -> None:
+def test_single_agent_view_passes_gymnasium_checker(smoke_cfg: SimWorldConfig, role: str) -> None:
     view = SingleAgentView(
         _cfg(smoke_cfg), role, reference_book(smoke_cfg), model_factory=fake_factory()
     )
@@ -79,7 +79,7 @@ def test_single_agent_view_passes_gymnasium_checker(smoke_cfg: RegWorldConfig, r
 
 
 def test_view_truncates_at_horizon_and_never_terminates_there(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     cfg = _cfg(smoke_cfg, horizon=3)
     view = SingleAgentView(cfg, "regulator", reference_book(cfg), model_factory=fake_factory())
@@ -90,7 +90,7 @@ def test_view_truncates_at_horizon_and_never_terminates_there(
     view.close()
 
 
-def test_view_terminates_when_the_ego_firm_exits(smoke_cfg: RegWorldConfig) -> None:
+def test_view_terminates_when_the_ego_firm_exits(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, n_strategic=2)
     view = SingleAgentView(
         cfg, "firm", reference_book(cfg), model_factory=fake_factory(kill_largest=True)
@@ -102,7 +102,7 @@ def test_view_terminates_when_the_ego_firm_exits(smoke_cfg: RegWorldConfig) -> N
     view.close()
 
 
-def test_ego_rotates_over_every_strategic_firm(smoke_cfg: RegWorldConfig) -> None:
+def test_ego_rotates_over_every_strategic_firm(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, n_strategic=3)
     view = SingleAgentView(cfg, "firm", reference_book(cfg), model_factory=fake_factory())
     egos = []
@@ -114,7 +114,7 @@ def test_ego_rotates_over_every_strategic_firm(smoke_cfg: RegWorldConfig) -> Non
     view.close()
 
 
-def test_reset_with_the_same_seed_replays_the_same_episode(smoke_cfg: RegWorldConfig) -> None:
+def test_reset_with_the_same_seed_replays_the_same_episode(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, n_strategic=3)
     view = SingleAgentView(cfg, "firm", reference_book(cfg), model_factory=fake_factory())
     first, _ = view.reset(seed=11)
@@ -125,7 +125,7 @@ def test_reset_with_the_same_seed_replays_the_same_episode(smoke_cfg: RegWorldCo
 
 
 def test_frozen_opponents_actually_act_in_the_underlying_model(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     """The non-ego firms must reach the ABM's strategic-control hook, not vanish."""
     cfg = _cfg(smoke_cfg, n_strategic=3)
@@ -147,7 +147,7 @@ def test_frozen_opponents_actually_act_in_the_underlying_model(
     view.close()
 
 
-def test_stepping_a_finished_view_raises(smoke_cfg: RegWorldConfig) -> None:
+def test_stepping_a_finished_view_raises(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, horizon=1)
     view = SingleAgentView(cfg, "regulator", reference_book(cfg), model_factory=fake_factory())
     view.reset(seed=1)
@@ -162,10 +162,10 @@ def test_stepping_a_finished_view_raises(smoke_cfg: RegWorldConfig) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_rule_based_arm_sends_neutral_strategic_actions(smoke_cfg: RegWorldConfig) -> None:
+def test_rule_based_arm_sends_neutral_strategic_actions(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, horizon=3, n_strategic=3)
     env = RegulationMARLEnv(cfg, model_factory=fake_factory())
-    from regworld.agents.marl import rollout_arm
+    from simworld.agents.marl import rollout_arm
 
     rollout_arm(env, reference_book(cfg), seed=7)
     model = env.model
@@ -174,7 +174,7 @@ def test_rule_based_arm_sends_neutral_strategic_actions(smoke_cfg: RegWorldConfi
         np.testing.assert_allclose(action, np.zeros(3))
 
 
-def test_evaluate_arm_returns_every_c6_metric_per_episode(smoke_cfg: RegWorldConfig) -> None:
+def test_evaluate_arm_returns_every_c6_metric_per_episode(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, horizon=3, n_strategic=3)
     seeds = [episode_seed(0, index) for index in range(4)]
     arm = evaluate_arm(cfg, reference_book(cfg), seeds, model_factory=fake_factory())
@@ -211,7 +211,7 @@ def test_compare_arms_covers_every_headline_metric() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_train_marl_writes_a_wireable_c6_artifact(smoke_cfg: RegWorldConfig) -> None:
+def test_train_marl_writes_a_wireable_c6_artifact(smoke_cfg: SimWorldConfig) -> None:
     cfg = _cfg(smoke_cfg, horizon=3, n_strategic=2)
     cfg.rl.marl_timesteps = 256
     result = train_marl(cfg, model_factory=fake_factory(), n_eval_episodes=4)
@@ -249,7 +249,7 @@ def test_train_marl_writes_a_wireable_c6_artifact(smoke_cfg: RegWorldConfig) -> 
     assert result.metrics["c6_any_changed"] == float(comparison["any_changed"])
 
 
-def test_trained_firm_policy_is_not_the_rule_based_control(smoke_cfg: RegWorldConfig) -> None:
+def test_trained_firm_policy_is_not_the_rule_based_control(smoke_cfg: SimWorldConfig) -> None:
     """A learned arm that emits zeros would make C6 vacuously null."""
     cfg = _cfg(smoke_cfg, horizon=3, n_strategic=2)
     cfg.rl.marl_timesteps = 256
@@ -257,7 +257,7 @@ def test_trained_firm_policy_is_not_the_rule_based_control(smoke_cfg: RegWorldCo
 
     from stable_baselines3 import PPO
 
-    from regworld.agents.marl import marl_dir, sb3_action_fn
+    from simworld.agents.marl import marl_dir, sb3_action_fn
 
     agent = PPO.load(str(marl_dir(cfg) / "firm_policy.zip"), device="cpu")
     env = RegulationMARLEnv(cfg, model_factory=fake_factory())

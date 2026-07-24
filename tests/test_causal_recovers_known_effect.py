@@ -17,22 +17,22 @@ import numpy as np
 import polars as pl
 import pytest
 
-from regworld.causal.did import estimate_did
-from regworld.causal.estimate import dml_audit, dml_onset
-from regworld.causal.ground_truth import load_ground_truth
-from regworld.causal.refute import refute_audit
-from regworld.data.ingest import ingest, read_panel_analysis
-from regworld.data.store import read_oracle
-from regworld.types import RegWorldConfig
+from simworld.causal.did import estimate_did
+from simworld.causal.estimate import dml_audit, dml_onset
+from simworld.causal.ground_truth import load_ground_truth
+from simworld.causal.refute import refute_audit
+from simworld.data.ingest import ingest, read_panel_analysis
+from simworld.data.store import read_oracle
+from simworld.types import SimWorldConfig
 
 pytestmark = pytest.mark.slow
 
 
 @pytest.fixture(scope="module")
-def dense_world(tmp_path_factory: pytest.TempPathFactory) -> RegWorldConfig:
+def dense_world(tmp_path_factory: pytest.TempPathFactory) -> SimWorldConfig:
     """A smoke-sized world observed with a full panel: estimators have power here."""
-    from regworld.data.generate import generate_ground_truth
-    from regworld.types import validate_config
+    from simworld.data.generate import generate_ground_truth
+    from simworld.types import validate_config
 
     from .conftest import compose_cfg
 
@@ -48,12 +48,12 @@ def dense_world(tmp_path_factory: pytest.TempPathFactory) -> RegWorldConfig:
     return cfg
 
 
-def _report_scale(cfg: RegWorldConfig) -> float:
+def _report_scale(cfg: SimWorldConfig) -> float:
     """Misclassification shrinks reported effects by (1 - q0 - q1)."""
     return 1.0 - 2.0 * cfg.dgp.misclassification
 
 
-def test_did_recovers_the_did_estimand(dense_world: RegWorldConfig) -> None:
+def test_did_recovers_the_did_estimand(dense_world: SimWorldConfig) -> None:
     truth = load_ground_truth(dense_world)
     panel = read_panel_analysis(dense_world)
     did = estimate_did(panel, seed=0)
@@ -67,14 +67,14 @@ def test_did_recovers_the_did_estimand(dense_world: RegWorldConfig) -> None:
     assert did.pretrend_max_abs < 0.5 * truth.did_truth
 
 
-def test_interference_gap_is_real_and_positive(dense_world: RegWorldConfig) -> None:
+def test_interference_gap_is_real_and_positive(dense_world: SimWorldConfig) -> None:
     """Spillovers reach the controls, so the DiD estimand < the do() truth."""
     truth = load_ground_truth(dense_world)
     assert truth.interference_gap > 0.0
     assert truth.did_truth < truth.onset_att
 
 
-def test_dml_is_precisely_wrong_for_the_policy_question(dense_world: RegWorldConfig) -> None:
+def test_dml_is_precisely_wrong_for_the_policy_question(dense_world: SimWorldConfig) -> None:
     """The guide's warning made flesh: a tight CI around the wrong number."""
     truth = load_ground_truth(dense_world)
     panel = read_panel_analysis(dense_world)
@@ -87,7 +87,7 @@ def test_dml_is_precisely_wrong_for_the_policy_question(dense_world: RegWorldCon
     assert not (dml.ci_low <= truth.onset_att <= dml.ci_high)
 
 
-def test_audit_effect_confounding_by_targeting(dense_world: RegWorldConfig) -> None:
+def test_audit_effect_confounding_by_targeting(dense_world: SimWorldConfig) -> None:
     """Naive audit contrasts are confounded upward; observed controls cannot fix it."""
     truth = load_ground_truth(dense_world)
     panel = read_panel_analysis(dense_world)
@@ -110,7 +110,7 @@ def test_audit_effect_confounding_by_targeting(dense_world: RegWorldConfig) -> N
 
 
 def test_conditioning_on_sealed_capacity_documents_residual_dynamics(
-    dense_world: RegWorldConfig,
+    dense_world: SimWorldConfig,
 ) -> None:
     """Even do()-grade z does not close the audit gap: the residual is dynamic.
 
@@ -133,7 +133,7 @@ def test_conditioning_on_sealed_capacity_documents_residual_dynamics(
     assert with_z.estimate - truth.audit_ate > 2.0 * with_z.se
 
 
-def test_placebo_refuter_returns_zero(dense_world: RegWorldConfig) -> None:
+def test_placebo_refuter_returns_zero(dense_world: SimWorldConfig) -> None:
     panel = read_panel_analysis(dense_world)
     report = refute_audit(panel, seed=0)
     assert abs(report.placebo_effect) < 0.05
@@ -142,8 +142,8 @@ def test_placebo_refuter_returns_zero(dense_world: RegWorldConfig) -> None:
     assert report.e_value > 1.0
 
 
-def test_discovery_fails_for_the_documented_reason(dense_world: RegWorldConfig) -> None:
-    from regworld.causal.discovery import discover
+def test_discovery_fails_for_the_documented_reason(dense_world: SimWorldConfig) -> None:
+    from simworld.causal.discovery import discover
 
     panel = read_panel_analysis(dense_world)
     report = discover(panel, seed=0)

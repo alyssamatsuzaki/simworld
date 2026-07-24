@@ -3,11 +3,11 @@
 import hydra
 from omegaconf import DictConfig
 
-from regworld.logging_conf import setup_logging
-from regworld.pipeline import run_pipeline
-from regworld.seeding import seed_everything
-from regworld.tracking import make_tracker
-from regworld.types import validate_config
+from simworld.logging_conf import setup_logging
+from simworld.pipeline import run_pipeline
+from simworld.seeding import seed_everything
+from simworld.tracking import make_tracker
+from simworld.types import validate_config
 
 
 @hydra.main(config_path="../configs", config_name="config", version_base="1.3")

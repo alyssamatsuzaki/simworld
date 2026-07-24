@@ -7,10 +7,10 @@ from typing import Any
 import numpy as np
 from scipy import sparse
 
-from regworld.data.generate import _baseline_outcome, _copy_state
-from regworld.dgp import dynamics
-from regworld.dgp.history import draw_rollout
-from regworld.rules import (
+from simworld.data.generate import _baseline_outcome, _copy_state
+from simworld.dgp import dynamics
+from simworld.dgp.history import draw_rollout
+from simworld.rules import (
     Constants,
     FirmAttributes,
     Graphs,
@@ -20,7 +20,7 @@ from regworld.rules import (
     WorldState,
     regulator_reward,
 )
-from regworld.types import RegWorldConfig, validate_config
+from simworld.types import SimWorldConfig, validate_config
 
 from .conftest import compose_cfg
 
@@ -92,7 +92,7 @@ def test_wellspecified_world_omits_only_the_latent_capacity_term(monkeypatch: An
 
     monkeypatch.setattr(dynamics, "step_quarter", fake_step)
     for variant in ("wellspecified", "confounded"):
-        cfg: RegWorldConfig = validate_config(compose_cfg(f"dgp={variant}", "profile=smoke"))
+        cfg: SimWorldConfig = validate_config(compose_cfg(f"dgp={variant}", "profile=smoke"))
         dynamics.run_dgp(
             cfg,
             firms,
@@ -108,7 +108,7 @@ def test_wellspecified_world_omits_only_the_latent_capacity_term(monkeypatch: An
 
 
 def test_staggered_rollout_retains_not_yet_treated_controls(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     rollout = draw_rollout(smoke_cfg, np.random.default_rng(smoke_cfg.seed + 90_001))
     assert rollout.min() >= 2

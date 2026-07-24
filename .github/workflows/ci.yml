@@ -18,7 +18,7 @@ jobs:
       - run: uv python install ${{ matrix.python }}
       # The fast suite exercises optional-backend features (PettingZoo MARL env,
       # SB3 agents, optuna sensitivity, arviz diagnostics) — importing
-      # regworld.agents / regworld.environments pulls those backends in — so it
+      # simworld.agents / simworld.environments pulls those backends in — so it
       # needs the full extras, the same install `make setup` performs locally.
       - run: uv sync --all-extras --frozen
       - run: make lint
@@ -39,5 +39,5 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f docker/Dockerfile -t regworld:ci .
-      - run: docker run --rm regworld:ci python scripts/run_pipeline.py profile=smoke
+      - run: docker build -f docker/Dockerfile -t simworld:ci .
+      - run: docker run --rm simworld:ci python scripts/run_pipeline.py profile=smoke

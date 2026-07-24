@@ -7,20 +7,20 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
-from regworld.causal.did import estimate_did
-from regworld.causal.estimate import cate_by_group, dml_audit, dml_onset, naive_logit_audit
-from regworld.causal.graph import (
+from simworld.causal.did import estimate_did
+from simworld.causal.estimate import cate_by_group, dml_audit, dml_onset, naive_logit_audit
+from simworld.causal.graph import (
     OUTCOME,
     TREATMENT,
     analyst_dag,
     observed_adjustment_set,
     true_dag,
 )
-from regworld.causal.refute import refute_audit
-from regworld.data.ingest import read_panel_analysis
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.seeding import seed_everything
-from regworld.types import validate_config
+from simworld.causal.refute import refute_audit
+from simworld.data.ingest import read_panel_analysis
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.seeding import seed_everything
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 
@@ -37,7 +37,7 @@ def _identifiability_report(panel: object) -> dict[str, object]:
     size the confounding actually flows through, so the "identified" estimand is
     still biased (the four-number gate and the E-value quantify how much).
     """
-    from regworld.causal.refute import _dowhy_frame, _ensure_dowhy_networkx_compat
+    from simworld.causal.refute import _dowhy_frame, _ensure_dowhy_networkx_compat
 
     _ensure_dowhy_networkx_compat()
     from dowhy import CausalModel
@@ -98,7 +98,7 @@ def main(cfg: DictConfig) -> None:
         "refutation": asdict(refutation),
     }
     if cfg_obj.causal.run_discovery:
-        from regworld.causal.discovery import discover
+        from simworld.causal.discovery import discover
 
         payload["discovery"] = asdict(discover(panel, seed=cfg_obj.seed))
     (out_dir / "causal_estimates.json").write_text(json.dumps(payload, indent=2))

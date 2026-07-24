@@ -15,15 +15,15 @@ from SALib.analyze.sobol import analyze as sobol_analyze
 from SALib.sample.morris import sample as morris_sample
 from SALib.sample.sobol import sample as sobol_sample
 
-from regworld.rules import Theta
-from regworld.sensitivity.screen import (
+from simworld.rules import Theta
+from simworld.sensitivity.screen import (
     THETA_NAMES,
     _salib_problem,
     _theta_from_vector,
     _theta_problem,
     theta_bounds,
 )
-from regworld.training.datamodule import ACTION_HIGH, ACTION_LOW
+from simworld.training.datamodule import ACTION_HIGH, ACTION_LOW
 
 
 class TestSALibProblem:

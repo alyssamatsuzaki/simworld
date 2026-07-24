@@ -1,4 +1,4 @@
-"""THE FIREWALL (§1). The answer key lives in `regworld.dgp` and `artifacts/oracle/`.
+"""THE FIREWALL (§1). The answer key lives in `simworld.dgp` and `artifacts/oracle/`.
 
 Only three kinds of code may touch it:
   - the world builders that WRITE it (`dgp/` itself, `data/generate.py`,
@@ -6,7 +6,7 @@ Only three kinds of code may touch it:
   - `data/store.py`, which implements the guarded `read_oracle()` accessor,
   - `evaluation/`, which grades everything against it.
 
-Any other import of `regworld.dgp` or reference to the oracle tree invalidates the
+Any other import of `simworld.dgp` or reference to the oracle tree invalidates the
 entire evaluation section. This test greps the source tree AND the scripts/ entry
 points; `data/store.py::read_oracle` adds a stack-frame check at runtime. Neither
 is optional.
@@ -17,29 +17,29 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "regworld"
+SRC = Path(__file__).resolve().parent.parent / "src" / "simworld"
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 
-# Static import forms: absolute (`import regworld.dgp`, `from regworld.dgp import`,
-# `from regworld import dgp`) and relative (`from .dgp import`, `from ..dgp import`,
+# Static import forms: absolute (`import simworld.dgp`, `from simworld.dgp import`,
+# `from simworld import dgp`) and relative (`from .dgp import`, `from ..dgp import`,
 # `from . import dgp`, `from .. import dgp`) — a relative import inside
-# src/regworld/*/ reaches the same package without ever spelling "regworld.dgp".
+# src/simworld/*/ reaches the same package without ever spelling "simworld.dgp".
 DGP_IMPORT = re.compile(
-    r"^\s*(?:from\s+regworld\.dgp"
-    r"|import\s+regworld\.dgp"
-    r"|from\s+regworld\s+import\s+.*\bdgp\b"
+    r"^\s*(?:from\s+simworld\.dgp"
+    r"|import\s+simworld\.dgp"
+    r"|from\s+simworld\s+import\s+.*\bdgp\b"
     r"|from\s+\.{1,2}\s*dgp\b"
     r"|from\s+\.{1,2}\s*import\s+.*\bdgp\b)",
     re.MULTILINE,
 )
-# Dynamic/string-built imports: `importlib.import_module("regworld.dgp...")`,
-# `__import__("regworld.dgp")`, and obvious concatenations such as
-# `import_module("regworld" + ".dgp")`. `[^)]*` matches newlines (negated class),
+# Dynamic/string-built imports: `importlib.import_module("simworld.dgp...")`,
+# `__import__("simworld.dgp")`, and obvious concatenations such as
+# `import_module("simworld" + ".dgp")`. `[^)]*` matches newlines (negated class),
 # so multi-line call sites are caught too. Exotic laundering (f-strings, getattr
 # chains) is out of regex reach; `read_oracle`'s stack check is the runtime
 # backstop for those.
 DGP_DYNAMIC = re.compile(
-    r"(?:\bimport_module|\b__import__)\s*\([^)]*(?:regworld\.dgp|['\"]\s*\.?dgp\b)"
+    r"(?:\bimport_module|\b__import__)\s*\([^)]*(?:simworld\.dgp|['\"]\s*\.?dgp\b)"
 )
 # The oracle FIREWALL guards *access* to the `artifacts/oracle/` tree, not the
 # English word: PLAN.md itself names AbmEnv "the oracle" (§10 Stage 8, §11
@@ -68,7 +68,7 @@ DGP_ALLOWED = {
 ORACLE_ALLOWED = DGP_ALLOWED | {"data/store.py"}  # store.py implements the guarded accessor
 
 # scripts/generate_world.py is Stage 1a's entry point: it calls the sanctioned
-# world builder `regworld.data.generate.generate_ground_truth`, which writes BOTH
+# world builder `simworld.data.generate.generate_ground_truth`, which writes BOTH
 # trees (observed/ and oracle/) at generation time, before anything is estimated.
 # It is therefore the only script allowed to import the DGP or name the oracle.
 SCRIPT_DGP_ALLOWED = {"generate_world.py"}
@@ -91,7 +91,7 @@ def test_no_dgp_import_outside_allowlist() -> None:
             continue
         if _imports_dgp(p.read_text(encoding="utf-8")):
             offenders.append(rel)
-    assert offenders == [], f"regworld.dgp imported outside the firewall: {offenders}"
+    assert offenders == [], f"simworld.dgp imported outside the firewall: {offenders}"
 
 
 def test_no_oracle_reference_outside_allowlist() -> None:
@@ -112,7 +112,7 @@ def test_scripts_only_world_builders_touch_dgp() -> None:
             continue
         if _imports_dgp(p.read_text(encoding="utf-8")):
             offenders.append(p.name)
-    assert offenders == [], f"scripts importing regworld.dgp: {offenders}"
+    assert offenders == [], f"scripts importing simworld.dgp: {offenders}"
 
 
 def test_scripts_do_not_reference_oracle() -> None:
@@ -130,28 +130,28 @@ def test_scripts_do_not_reference_oracle() -> None:
 def test_firewall_regexes_catch_known_evasions() -> None:
     """The tripwire itself is tested: every known evasion form must trip it."""
     evasions = [
-        "from regworld.dgp import world",
-        "import regworld.dgp",
-        "import regworld.dgp.world as w",
-        "from regworld import dgp",
-        "from regworld import data, dgp",
+        "from simworld.dgp import world",
+        "import simworld.dgp",
+        "import simworld.dgp.world as w",
+        "from simworld import dgp",
+        "from simworld import data, dgp",
         "from .dgp import world",
         "from ..dgp import world",
         "from . import dgp",
         "from .. import dgp",
-        'importlib.import_module("regworld.dgp")',
-        "import_module('regworld.dgp.world')",
-        '__import__("regworld.dgp")',
-        'import_module("regworld" + ".dgp")',
-        'import_module(\n    "regworld.dgp"\n)',
+        'importlib.import_module("simworld.dgp")',
+        "import_module('simworld.dgp.world')",
+        '__import__("simworld.dgp")',
+        'import_module("simworld" + ".dgp")',
+        'import_module(\n    "simworld.dgp"\n)',
     ]
     for snippet in evasions:
         assert _imports_dgp(snippet), f"firewall regex missed: {snippet!r}"
     innocents = [
-        "from regworld.data import store",
+        "from simworld.data import store",
         "from .dgp_free_module import helper",  # 'dgp' prefix of a longer name
         "__import__(mod).__version__",  # stages.py version probe, no literal
-        "# the DGP binds theta-star in regworld/dgp (docstring mention, no import)",
+        "# the DGP binds theta-star in simworld/dgp (docstring mention, no import)",
     ]
     for snippet in innocents:
         assert not DGP_IMPORT.search(snippet), f"false positive (import): {snippet!r}"
@@ -179,7 +179,7 @@ def test_firewall_regexes_catch_known_evasions() -> None:
 
 
 def test_estimated_theta_defaults_do_not_reveal_answer_key() -> None:
-    from regworld.rules import Theta
+    from simworld.rules import Theta
 
     assert Theta().beta_peer != 1.4
     assert Theta().beta_capacity == 0.0

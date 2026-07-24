@@ -11,8 +11,8 @@ import torch
 from scipy import sparse
 from scipy.stats import ks_2samp
 
-from regworld.abm.tensorized import rollout_tensorized, scipy_to_torch_sparse
-from regworld.rules import (
+from simworld.abm.tensorized import rollout_tensorized, scipy_to_torch_sparse
+from simworld.rules import (
     Constants,
     FirmAttributes,
     Graphs,
@@ -22,12 +22,12 @@ from regworld.rules import (
     initial_state,
     step_quarter,
 )
-from regworld.types import RegWorldConfig, validate_config
+from simworld.types import SimWorldConfig, validate_config
 
 from .conftest import compose_cfg
 
 
-def _config(*, n_firms: int = 48, n_segments: int = 4, horizon: int = 6) -> RegWorldConfig:
+def _config(*, n_firms: int = 48, n_segments: int = 4, horizon: int = 6) -> SimWorldConfig:
     return validate_config(
         compose_cfg(
             "profile=smoke",
@@ -39,7 +39,7 @@ def _config(*, n_firms: int = 48, n_segments: int = 4, horizon: int = 6) -> RegW
     )
 
 
-def _world(cfg: RegWorldConfig, seed: int = 812) -> SimpleNamespace:
+def _world(cfg: SimWorldConfig, seed: int = 812) -> SimpleNamespace:
     rng = np.random.default_rng(seed)
     n = cfg.population.n_firms
     n_segments = cfg.population.n_consumer_segments
@@ -208,7 +208,7 @@ def test_tensorized_matches_shared_rule_distribution() -> None:
 @pytest.mark.slow
 def test_tensorized_agrees_with_mesa_across_seeds() -> None:
     """PLAN Stage 3b gate: terminal aggregate distributions agree across 32 seeds."""
-    from regworld.abm.model import ObservedWorld, RegulationModel
+    from simworld.abm.model import ObservedWorld, RegulationModel
 
     cfg = _config(n_firms=2_000, n_segments=20, horizon=24)
     policy = PolicyLevers(enforcement=0.6, targeting=0.5, phase_speed=0.3, subsidy=0.2)

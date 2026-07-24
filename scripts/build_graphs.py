@@ -8,15 +8,15 @@ import polars as pl
 import torch
 from omegaconf import DictConfig
 
-from regworld.data.store import observed_dir
-from regworld.graphs.to_pyg import (
+from simworld.data.store import observed_dir
+from simworld.graphs.to_pyg import (
     hetero_from_edges,
     node_feature_contract,
     static_node_features,
 )
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.seeding import seed_everything
-from regworld.types import validate_config
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.seeding import seed_everything
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 

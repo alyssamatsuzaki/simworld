@@ -1,4 +1,4 @@
-# RegWorld Findings
+# SimWorld Findings
 
 ## Disclaimer
 

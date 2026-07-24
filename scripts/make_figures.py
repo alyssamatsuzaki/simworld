@@ -10,9 +10,9 @@ from __future__ import annotations
 import hydra
 from omegaconf import DictConfig
 
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.seeding import seed_everything
-from regworld.types import validate_config
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.seeding import seed_everything
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 
@@ -23,8 +23,8 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg_obj.seed)
     setup_logging()
 
-    from regworld.visualization.figures import make_all_figures
-    from regworld.visualization.interactive import make_all_interactive
+    from simworld.visualization.figures import make_all_figures
+    from simworld.visualization.interactive import make_all_interactive
 
     static_paths = make_all_figures(cfg_obj)
     log.info("wrote %d/13 static figures", len(static_paths))

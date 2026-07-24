@@ -10,9 +10,9 @@ from gymnasium.utils.env_checker import check_env
 from numpy.typing import NDArray
 from scipy import sparse
 
-from regworld.abm.model import ObservedWorld, RegulationModel
-from regworld.environments.abm_env import AbmEnv
-from regworld.rules import (
+from simworld.abm.model import ObservedWorld, RegulationModel
+from simworld.environments.abm_env import AbmEnv
+from simworld.rules import (
     Constants,
     FirmAttributes,
     Graphs,
@@ -23,13 +23,13 @@ from regworld.rules import (
     WorldState,
     hhi,
 )
-from regworld.types import RegWorldConfig
+from simworld.types import SimWorldConfig
 
 
 class FakeRegulationModel:
     def __init__(
         self,
-        cfg: RegWorldConfig,
+        cfg: SimWorldConfig,
         seed: int,
         *,
         collapse: bool = False,
@@ -150,13 +150,13 @@ class FakeRegulationModel:
 
 
 def fake_factory(*, collapse: bool = False, kill_largest: bool = False):
-    def make(cfg: RegWorldConfig, seed: int) -> FakeRegulationModel:
+    def make(cfg: SimWorldConfig, seed: int) -> FakeRegulationModel:
         return FakeRegulationModel(cfg, seed, collapse=collapse, kill_largest=kill_largest)
 
     return make
 
 
-def test_gymnasium_checker_and_deterministic_reset(smoke_cfg: RegWorldConfig) -> None:
+def test_gymnasium_checker_and_deterministic_reset(smoke_cfg: SimWorldConfig) -> None:
     env = AbmEnv(smoke_cfg, model_factory=fake_factory())
     check_env(env, skip_render_check=True)
     first, _ = env.reset(seed=17)
@@ -165,7 +165,7 @@ def test_gymnasium_checker_and_deterministic_reset(smoke_cfg: RegWorldConfig) ->
     np.testing.assert_array_equal(first, second)
 
 
-def test_time_limit_is_only_truncation(smoke_cfg: RegWorldConfig) -> None:
+def test_time_limit_is_only_truncation(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.horizon_quarters = 2
     env = AbmEnv(cfg, model_factory=fake_factory())
@@ -174,13 +174,13 @@ def test_time_limit_is_only_truncation(smoke_cfg: RegWorldConfig) -> None:
     assert env.step(np.zeros(4, np.float32))[2:4] == (False, True)
 
 
-def test_collapse_is_only_termination(smoke_cfg: RegWorldConfig) -> None:
+def test_collapse_is_only_termination(smoke_cfg: SimWorldConfig) -> None:
     env = AbmEnv(smoke_cfg, model_factory=fake_factory(collapse=True))
     env.reset(seed=1)
     assert env.step(np.zeros(4, np.float32))[2:4] == (True, False)
 
 
-def test_real_regulation_model_one_controlled_step(smoke_cfg: RegWorldConfig) -> None:
+def test_real_regulation_model_one_controlled_step(smoke_cfg: SimWorldConfig) -> None:
     template = FakeRegulationModel(smoke_cfg, seed=3)
     n = template.firms.n
     graphs = Graphs(
@@ -196,7 +196,7 @@ def test_real_regulation_model_one_controlled_step(smoke_cfg: RegWorldConfig) ->
         Theta(beta_capacity=0.0),
     )
 
-    def factory(cfg: RegWorldConfig, seed: int) -> RegulationModel:
+    def factory(cfg: SimWorldConfig, seed: int) -> RegulationModel:
         return RegulationModel(cfg, world=world, seed=seed)
 
     env = AbmEnv(smoke_cfg, model_factory=factory)
@@ -215,16 +215,16 @@ def test_real_regulation_model_one_controlled_step(smoke_cfg: RegWorldConfig) ->
 
 import torch  # noqa: E402
 
-from regworld.environments.emulator_env import EmulatorEnv  # noqa: E402
-from regworld.models.world_model import Decoded, ModelState, WorldModel  # noqa: E402
-from regworld.training.datamodule import aggregate_dim  # noqa: E402
+from simworld.environments.emulator_env import EmulatorEnv  # noqa: E402
+from simworld.models.world_model import Decoded, ModelState, WorldModel  # noqa: E402
+from simworld.training.datamodule import aggregate_dim  # noqa: E402
 
 from .test_dynamics_shapes import tiny_template  # noqa: E402
 
 _N_FIRMS, _N_SEGMENTS = 12, 3
 
 
-def _emulator_meta(cfg: RegWorldConfig) -> dict:
+def _emulator_meta(cfg: SimWorldConfig) -> dict:
     aggregates = torch.zeros(aggregate_dim(cfg))
     aggregates[2] = 800.0  # baseline HHI
     aggregates[3] = 0.55  # baseline trust
@@ -243,7 +243,7 @@ def _emulator_meta(cfg: RegWorldConfig) -> dict:
     }
 
 
-def _tiny_world_model(cfg: RegWorldConfig, seed: int = 0) -> WorldModel:
+def _tiny_world_model(cfg: SimWorldConfig, seed: int = 0) -> WorldModel:
     rng = np.random.default_rng(seed)
     torch.manual_seed(seed)
     return WorldModel(
@@ -268,7 +268,7 @@ def _tiny_world_model(cfg: RegWorldConfig, seed: int = 0) -> WorldModel:
 class _ScriptedWorldModel:
     """Duck-typed stand-in emitting a fixed aggregate row every step."""
 
-    def __init__(self, cfg: RegWorldConfig, aggregates: np.ndarray) -> None:
+    def __init__(self, cfg: SimWorldConfig, aggregates: np.ndarray) -> None:
         self.aggregate_dim = aggregate_dim(cfg)
         self._row = torch.as_tensor(aggregates, dtype=torch.float32).unsqueeze(0)
 
@@ -293,7 +293,7 @@ class _ScriptedWorldModel:
         return state, decoded
 
 
-def test_emulator_env_checker_and_deterministic_reset(smoke_cfg: RegWorldConfig) -> None:
+def test_emulator_env_checker_and_deterministic_reset(smoke_cfg: SimWorldConfig) -> None:
     env = EmulatorEnv(smoke_cfg, model=_tiny_world_model(smoke_cfg), meta=_emulator_meta(smoke_cfg))
     check_env(env, skip_render_check=True)
     first, _ = env.reset(seed=17)
@@ -307,7 +307,7 @@ def test_emulator_env_checker_and_deterministic_reset(smoke_cfg: RegWorldConfig)
     np.testing.assert_array_equal(obs_a, obs_b)
 
 
-def test_space_identity_between_abm_and_emulator(smoke_cfg: RegWorldConfig) -> None:
+def test_space_identity_between_abm_and_emulator(smoke_cfg: SimWorldConfig) -> None:
     """The identity that makes the planning-utility comparison possible."""
     abm = AbmEnv(smoke_cfg, model_factory=fake_factory())
     emulator = EmulatorEnv(
@@ -317,7 +317,7 @@ def test_space_identity_between_abm_and_emulator(smoke_cfg: RegWorldConfig) -> N
     assert abm.action_space == emulator.action_space
 
 
-def test_emulator_time_limit_is_only_truncation(smoke_cfg: RegWorldConfig) -> None:
+def test_emulator_time_limit_is_only_truncation(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.horizon_quarters = 2
     benign = np.zeros(aggregate_dim(cfg))
@@ -328,7 +328,7 @@ def test_emulator_time_limit_is_only_truncation(smoke_cfg: RegWorldConfig) -> No
     assert env.step(np.zeros(4, np.float32))[2:4] == (False, True)
 
 
-def test_emulator_collapse_is_only_termination(smoke_cfg: RegWorldConfig) -> None:
+def test_emulator_collapse_is_only_termination(smoke_cfg: SimWorldConfig) -> None:
     collapsed = np.zeros(aggregate_dim(smoke_cfg))
     collapsed[5] = 0.5  # > 40% of firms exited: absorbing end, no future value
     env = EmulatorEnv(
@@ -338,7 +338,7 @@ def test_emulator_collapse_is_only_termination(smoke_cfg: RegWorldConfig) -> Non
     assert env.step(np.zeros(4, np.float32))[2:4] == (True, False)
 
 
-def test_emulator_reward_flag_switches_source(smoke_cfg: RegWorldConfig) -> None:
+def test_emulator_reward_flag_switches_source(smoke_cfg: SimWorldConfig) -> None:
     benign = np.zeros(aggregate_dim(smoke_cfg))
     benign[0] = 0.6  # compliance up...
     benign[2], benign[3], benign[4] = 800.0, 0.55, 3.0  # ...everything else at baseline
@@ -354,7 +354,7 @@ def test_emulator_reward_flag_switches_source(smoke_cfg: RegWorldConfig) -> None
     assert env_head.step(np.zeros(4, np.float32))[1] == 0.0  # scripted head says 0
 
 
-def test_unseeded_reset_draws_fresh_episode_noise(smoke_cfg: RegWorldConfig) -> None:
+def test_unseeded_reset_draws_fresh_episode_noise(smoke_cfg: SimWorldConfig) -> None:
     """reset(seed=None) must continue the env RNG stream, not re-pin cfg.seed.
 
     F11: SB3's unseeded auto-resets replayed one noise stream for a whole
@@ -381,7 +381,7 @@ def test_unseeded_reset_draws_fresh_episode_noise(smoke_cfg: RegWorldConfig) -> 
 
 
 def test_default_factory_prefers_posterior_mean_theta(
-    smoke_cfg: RegWorldConfig, monkeypatch, tmp_path
+    smoke_cfg: SimWorldConfig, monkeypatch, tmp_path
 ) -> None:
     """F10: the env oracle binds calibrated theta when posterior.nc exists.
 
@@ -389,8 +389,8 @@ def test_default_factory_prefers_posterior_mean_theta(
     env; it must run at the Stage-4 posterior mean the emulator trained around,
     falling back to prior-center Theta() (with one warning) before calibration.
     """
-    from regworld.environments import abm_env
-    from regworld.rules import Theta
+    from simworld.environments import abm_env
+    from simworld.rules import Theta
 
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.paths.root = str(tmp_path)
@@ -404,7 +404,7 @@ def test_default_factory_prefers_posterior_mean_theta(
     # so the test needs no real arviz InferenceData on disk).
     calibrated = Theta(beta_peer=1.9, beta_capacity=0.0)
     monkeypatch.setattr(abm_env, "_load_posterior_mean_theta", lambda _p: calibrated)
-    from regworld.calibration.posterior import posterior_path
+    from simworld.calibration.posterior import posterior_path
 
     target = posterior_path(cfg)
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -2,7 +2,7 @@
 
 Writes ``artifacts/ensemble/{cube.parquet, validation_report.json,
 ensemble_summary.json}``. A missing emulator checkpoint is an honest partial
-(``regworld.pipeline.Degraded``), logged and reported with a nonzero exit
+(``simworld.pipeline.Degraded``), logged and reported with a nonzero exit
 rather than silently skipped.
 """
 
@@ -14,10 +14,10 @@ import sys
 import hydra
 from omegaconf import DictConfig
 
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.pipeline import Degraded
-from regworld.seeding import seed_everything
-from regworld.types import validate_config
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.pipeline import Degraded
+from simworld.seeding import seed_everything
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 
@@ -28,8 +28,8 @@ def main(cfg: DictConfig) -> None:
     seed_everything(cfg_obj.seed)
     setup_logging()
 
-    from regworld.ensemble import run_ensemble
-    from regworld.ensemble.validation import CoverageGateFailure, enforce_coverage_gate
+    from simworld.ensemble import run_ensemble
+    from simworld.ensemble.validation import CoverageGateFailure, enforce_coverage_gate
 
     try:
         result = run_ensemble(cfg_obj)

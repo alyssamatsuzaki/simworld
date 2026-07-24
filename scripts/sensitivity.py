@@ -12,11 +12,11 @@ import sys
 import hydra
 from omegaconf import DictConfig
 
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.seeding import seed_everything
-from regworld.sensitivity.policy_search import run_policy_search, save_optuna_best
-from regworld.sensitivity.screen import run_sensitivity
-from regworld.types import validate_config
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.seeding import seed_everything
+from simworld.sensitivity.policy_search import run_policy_search, save_optuna_best
+from simworld.sensitivity.screen import run_sensitivity
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 

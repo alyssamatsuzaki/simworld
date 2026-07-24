@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 import torch
 
-from regworld.agents import registry
-from regworld.agents.dreamer import (
+from simworld.agents import registry
+from simworld.agents.dreamer import (
     Critic,
     SquashedGaussianActor,
     _budget,
@@ -21,16 +21,16 @@ from regworld.agents.dreamer import (
     normalize_obs,
     squash_action,
 )
-from regworld.agents.planning import evaluate_in_abm, exploitation_gap, rollout_episode
-from regworld.agents.ppo import train_ppo
-from regworld.environments.emulator_env import EmulatorEnv
-from regworld.environments.wrappers import flat_observation_space, regulator_action_space
-from regworld.types import RegWorldConfig
+from simworld.agents.planning import evaluate_in_abm, exploitation_gap, rollout_episode
+from simworld.agents.ppo import train_ppo
+from simworld.environments.emulator_env import EmulatorEnv
+from simworld.environments.wrappers import flat_observation_space, regulator_action_space
+from simworld.types import SimWorldConfig
 
 from .test_env_contract import _emulator_meta, _tiny_world_model, fake_factory
 
 
-def test_ppo_constructs_and_learns_one_step(smoke_cfg: RegWorldConfig) -> None:
+def test_ppo_constructs_and_learns_one_step(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.rl.n_envs = 2
     cfg.rl.total_timesteps = 64
@@ -44,7 +44,7 @@ def test_ppo_constructs_and_learns_one_step(smoke_cfg: RegWorldConfig) -> None:
     assert np.isfinite(result.metrics["mean_episode_reward"])
 
 
-def test_dreamer_imagination_step_yields_finite_loss(smoke_cfg: RegWorldConfig) -> None:
+def test_dreamer_imagination_step_yields_finite_loss(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.rl.n_envs = 2
     cfg.emulator.imag_horizon = 3
@@ -99,7 +99,7 @@ def test_normalize_and_squash_stay_in_range() -> None:
     assert bool((action <= high).all())
 
 
-def test_registry_static_policy_gives_in_bounds_action(smoke_cfg: RegWorldConfig) -> None:
+def test_registry_static_policy_gives_in_bounds_action(smoke_cfg: SimWorldConfig) -> None:
     policy = registry.load_policy(smoke_cfg, "uniform_high")
     obs_dim = int(flat_observation_space(smoke_cfg).shape[0])
     action = policy(np.zeros(obs_dim, dtype=np.float32))
@@ -108,7 +108,7 @@ def test_registry_static_policy_gives_in_bounds_action(smoke_cfg: RegWorldConfig
     assert space.contains(action.astype(np.float32))
 
 
-def test_registry_random_policy_is_seeded_and_in_bounds(smoke_cfg: RegWorldConfig) -> None:
+def test_registry_random_policy_is_seeded_and_in_bounds(smoke_cfg: SimWorldConfig) -> None:
     policy_a = registry.load_policy(smoke_cfg, "random")
     policy_b = registry.load_policy(smoke_cfg, "random")
     obs_dim = int(flat_observation_space(smoke_cfg).shape[0])
@@ -121,7 +121,7 @@ def test_registry_random_policy_is_seeded_and_in_bounds(smoke_cfg: RegWorldConfi
     np.testing.assert_array_equal(action_a, action_b)  # same cfg.seed -> same draw
 
 
-def test_registry_missing_learned_artifact_raises_clear_error(smoke_cfg: RegWorldConfig) -> None:
+def test_registry_missing_learned_artifact_raises_clear_error(smoke_cfg: SimWorldConfig) -> None:
     with pytest.raises(FileNotFoundError, match="rl_ppo"):
         registry.load_policy(smoke_cfg, "rl_ppo")
     with pytest.raises(FileNotFoundError, match="rl_dreamer"):
@@ -129,7 +129,7 @@ def test_registry_missing_learned_artifact_raises_clear_error(smoke_cfg: RegWorl
 
 
 def test_available_policies_lists_statics_and_random_without_artifacts(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     names = registry.available_policies(smoke_cfg)
     assert "uniform_high" in names
@@ -138,7 +138,7 @@ def test_available_policies_lists_statics_and_random_without_artifacts(
     assert "rl_dreamer" not in names
 
 
-def test_planning_rollout_in_abm_returns_finite_j(smoke_cfg: RegWorldConfig) -> None:
+def test_planning_rollout_in_abm_returns_finite_j(smoke_cfg: SimWorldConfig) -> None:
     policy = registry.load_policy(smoke_cfg, "uniform_low")
     stats = evaluate_in_abm(smoke_cfg, policy, seeds=[0, 1], draws=1, model_factory=fake_factory())
     assert np.isfinite(stats.mean)
@@ -146,8 +146,8 @@ def test_planning_rollout_in_abm_returns_finite_j(smoke_cfg: RegWorldConfig) -> 
     assert stats.n == 2
 
 
-def test_rollout_episode_matches_manual_loop(smoke_cfg: RegWorldConfig) -> None:
-    from regworld.environments.abm_env import AbmEnv
+def test_rollout_episode_matches_manual_loop(smoke_cfg: SimWorldConfig) -> None:
+    from simworld.environments.abm_env import AbmEnv
 
     policy = registry.load_policy(smoke_cfg, "none")
     env = AbmEnv(smoke_cfg, model_factory=fake_factory())

@@ -13,26 +13,26 @@ import pytest
 from polars.testing import assert_frame_equal
 from scipy import sparse
 
-from regworld.abm.agents import AssociationAgent, FirmAgent, RegulatorAgent, SegmentAgent
-from regworld.abm.collect import write_tensorized_outputs, write_trajectory_outputs
-from regworld.abm.model import (
+from simworld.abm.agents import AssociationAgent, FirmAgent, RegulatorAgent, SegmentAgent
+from simworld.abm.collect import write_tensorized_outputs, write_trajectory_outputs
+from simworld.abm.model import (
     ObservedWorld,
     RegulationModel,
     load_observed_world,
     strategic_controls_from_actions,
 )
-from regworld.abm.policies import STATIC_POLICIES
-from regworld.abm.tensorized import rollout_tensorized
-from regworld.data.generate import generate_ground_truth
-from regworld.rules import PolicyLevers
-from regworld.types import RegWorldConfig
+from simworld.abm.policies import STATIC_POLICIES
+from simworld.abm.tensorized import rollout_tensorized
+from simworld.data.generate import generate_ground_truth
+from simworld.rules import PolicyLevers
+from simworld.types import SimWorldConfig
 
 
 @pytest.fixture(scope="module")
 def observed_world(
     tmp_path_factory: pytest.TempPathFactory,
-) -> tuple[RegWorldConfig, ObservedWorld]:
-    from regworld.types import validate_config
+) -> tuple[SimWorldConfig, ObservedWorld]:
+    from simworld.types import validate_config
 
     from .conftest import compose_cfg
 
@@ -47,7 +47,7 @@ def observed_world(
 
 
 def test_observed_world_starts_fresh_episode(
-    observed_world: tuple[RegWorldConfig, ObservedWorld],
+    observed_world: tuple[SimWorldConfig, ObservedWorld],
 ) -> None:
     _, world = observed_world
     state = world.initial_state
@@ -62,7 +62,7 @@ def test_observed_world_starts_fresh_episode(
     assert world.theta.beta_capacity == 0.0
 
 
-def test_mesa_agentset_contract(observed_world: tuple[RegWorldConfig, ObservedWorld]) -> None:
+def test_mesa_agentset_contract(observed_world: tuple[SimWorldConfig, ObservedWorld]) -> None:
     cfg, world = observed_world
     model = RegulationModel(cfg, world=world, seed=4)
     assert isinstance(model, mesa.Model)
@@ -80,7 +80,7 @@ def test_mesa_agentset_contract(observed_world: tuple[RegWorldConfig, ObservedWo
     assert model.time == 1.0
 
 
-def test_deterministic_trajectory(observed_world: tuple[RegWorldConfig, ObservedWorld]) -> None:
+def test_deterministic_trajectory(observed_world: tuple[SimWorldConfig, ObservedWorld]) -> None:
     cfg, world = observed_world
     first = RegulationModel(cfg, world=world, seed=17).run(12)
     second = RegulationModel(cfg, world=world, seed=17).run(12)
@@ -90,7 +90,7 @@ def test_deterministic_trajectory(observed_world: tuple[RegWorldConfig, Observed
     assert np.array_equal(first.final_state.y, second.final_state.y)
 
 
-def test_quarterly_invariants(observed_world: tuple[RegWorldConfig, ObservedWorld]) -> None:
+def test_quarterly_invariants(observed_world: tuple[SimWorldConfig, ObservedWorld]) -> None:
     cfg, world = observed_world
     policy = STATIC_POLICIES["phased_targeted"]
     model = RegulationModel(cfg, world=world, policy=policy, seed=2)
@@ -113,7 +113,7 @@ def test_quarterly_invariants(observed_world: tuple[RegWorldConfig, ObservedWorl
 
 
 def test_enforcement_increases_terminal_compliance_on_average(
-    observed_world: tuple[RegWorldConfig, ObservedWorld],
+    observed_world: tuple[SimWorldConfig, ObservedWorld],
 ) -> None:
     cfg, world = observed_world
 
@@ -131,7 +131,7 @@ def test_enforcement_increases_terminal_compliance_on_average(
 
 
 def test_zero_cost_and_subsidy_metamorphic_checks(
-    observed_world: tuple[RegWorldConfig, ObservedWorld],
+    observed_world: tuple[SimWorldConfig, ObservedWorld],
 ) -> None:
     cfg, world = observed_world
     zero_cost_world = replace(world, firms=replace(world.firms, cost_coef=np.zeros(world.firms.n)))
@@ -160,7 +160,7 @@ def test_zero_cost_and_subsidy_metamorphic_checks(
 
 
 def test_peer_coefficient_increases_supply_edge_correlation(
-    observed_world: tuple[RegWorldConfig, ObservedWorld],
+    observed_world: tuple[SimWorldConfig, ObservedWorld],
 ) -> None:
     cfg, world = observed_world
     edge_matrix = sparse.triu(world.graphs.supply_und, k=1).tocoo()
@@ -193,7 +193,7 @@ def test_peer_coefficient_increases_supply_edge_correlation(
     assert mean_terminal_correlation(4.0) > mean_terminal_correlation(0.0)
 
 
-def test_strategic_control_api(observed_world: tuple[RegWorldConfig, ObservedWorld]) -> None:
+def test_strategic_control_api(observed_world: tuple[SimWorldConfig, ObservedWorld]) -> None:
     cfg, world = observed_world
     firm_id = int(np.flatnonzero(world.firms.association >= 0)[0])
     association_id = int(world.firms.association[firm_id])
@@ -213,7 +213,7 @@ def test_strategic_control_api(observed_world: tuple[RegWorldConfig, ObservedWor
 
 
 def test_outputs_are_parquet_and_json(
-    observed_world: tuple[RegWorldConfig, ObservedWorld], tmp_path: Path
+    observed_world: tuple[SimWorldConfig, ObservedWorld], tmp_path: Path
 ) -> None:
     cfg, world = observed_world
     output_cfg = cfg.model_copy(deep=True)
@@ -243,7 +243,7 @@ def test_outputs_are_parquet_and_json(
     }
 
 
-def test_smoke_performance(observed_world: tuple[RegWorldConfig, ObservedWorld]) -> None:
+def test_smoke_performance(observed_world: tuple[SimWorldConfig, ObservedWorld]) -> None:
     cfg, world = observed_world
     started = time.perf_counter()
     RegulationModel(cfg, world=world, seed=23).run(24)

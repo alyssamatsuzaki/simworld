@@ -9,10 +9,10 @@ import numpy as np
 import polars as pl
 import pytest
 
-from regworld.abm.tensorized import rollout_tensorized
-from regworld.calibration.diagnostics import run_micro_diagnostics
-from regworld.calibration.macro_smc import MACRO_PARAMETER_NAMES, sample_macro_prior
-from regworld.calibration.micro_numpyro import (
+from simworld.abm.tensorized import rollout_tensorized
+from simworld.calibration.diagnostics import run_micro_diagnostics
+from simworld.calibration.macro_smc import MACRO_PARAMETER_NAMES, sample_macro_prior
+from simworld.calibration.micro_numpyro import (
     MICRO_PARAMETER_NAMES,
     MicroData,
     fit_micro_numpyro,
@@ -20,11 +20,11 @@ from regworld.calibration.micro_numpyro import (
     micro_data_from_frame,
     reported_probability,
 )
-from regworld.calibration.summaries import SUMMARY_NAMES, summary_statistics
-from regworld.rules import PolicyLevers, Theta
-from regworld.stages import stage_calibration
-from regworld.tracking import NullTracker
-from regworld.types import RegWorldConfig
+from simworld.calibration.summaries import SUMMARY_NAMES, summary_statistics
+from simworld.rules import PolicyLevers, Theta
+from simworld.stages import stage_calibration
+from simworld.tracking import NullTracker
+from simworld.types import SimWorldConfig
 
 from .test_abm_agreement import _config, _world
 
@@ -112,7 +112,7 @@ def test_tensorized_historical_schedule_has_no_pre_onset_policy_effect() -> None
 
 
 def test_stage_calibration_registers_subprocess_manifest(
-    smoke_cfg: RegWorldConfig, monkeypatch: pytest.MonkeyPatch
+    smoke_cfg: SimWorldConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     cfg = smoke_cfg
     output_dir = Path(cfg.paths.root) / "calibration"
@@ -125,7 +125,7 @@ def test_stage_calibration_registers_subprocess_manifest(
     (output_dir / "micro_diagnostics.json").write_text(
         json.dumps({"divergences": 0, "max_r_hat": 1.0, "min_ess_bulk": 500})
     )
-    monkeypatch.setattr("regworld.stages._run_script", lambda *args, **kwargs: None)
+    monkeypatch.setattr("simworld.stages._run_script", lambda *args, **kwargs: None)
     outputs = stage_calibration(cfg, NullTracker())
     assert posterior in outputs
     assert output_dir / "calibration_manifest.json" in outputs

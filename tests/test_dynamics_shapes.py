@@ -12,9 +12,9 @@ import numpy as np
 import pytest
 import torch
 
-from regworld.models.gnn import GraphTemplate
-from regworld.models.rssm import MacroRSSM
-from regworld.models.world_model import ModelState, WorldModel
+from simworld.models.gnn import GraphTemplate
+from simworld.models.rssm import MacroRSSM
+from simworld.models.world_model import ModelState, WorldModel
 
 N_FIRMS, N_SEGMENTS, N_ASSOC = 12, 3, 2
 AGG_DIM, ACTION_DIM = 10, 4

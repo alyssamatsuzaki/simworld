@@ -29,12 +29,12 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from regworld.agents import planning, registry
-from regworld.agents.planning import RolloutStats
-from regworld.agents.registry import load_checkpoint_compat
-from regworld.evaluation import planning_utility
-from regworld.training.checkpoint import checkpoint_path
-from regworld.types import RegWorldConfig, validate_config
+from simworld.agents import planning, registry
+from simworld.agents.planning import RolloutStats
+from simworld.agents.registry import load_checkpoint_compat
+from simworld.evaluation import planning_utility
+from simworld.training.checkpoint import checkpoint_path
+from simworld.types import SimWorldConfig, validate_config
 
 from .conftest import compose_cfg
 
@@ -51,7 +51,7 @@ MAX_EXPLOITATION_GAP = 0.15
 
 
 def _absolute(path: str) -> str:
-    """Anchor a relative artifact path at the repo root, leaving `REGWORLD_ARTIFACT_ROOT` alone."""
+    """Anchor a relative artifact path at the repo root, leaving `SIMWORLD_ARTIFACT_ROOT` alone."""
     candidate = Path(path)
     return str(candidate if candidate.is_absolute() else REPO_ROOT / candidate)
 
@@ -60,17 +60,17 @@ def _absolute(path: str) -> str:
 # criteria at profile=dev; at smoke the models are deliberately undertrained, so the
 # strict beat-the-baselines assertion is xfail-ed there and enforced everywhere else.
 # Point this at "dev" (with dev artifacts on disk) to run the gate for real.
-_GATE_PROFILE = os.environ.get("REGWORLD_GATE_PROFILE", "smoke")
+_GATE_PROFILE = os.environ.get("SIMWORLD_GATE_PROFILE", "smoke")
 
 
 @pytest.fixture(scope="module")
-def gate_cfg() -> RegWorldConfig:
+def gate_cfg() -> SimWorldConfig:
     """Gate-profile config pinned to the real artifact tree.
 
     The gate is about trained checkpoints, so unlike `smoke_cfg` this one must
     not be redirected into `tmp_path`. Relative paths are anchored at the repo
     root so the test does not depend on the working directory pytest was
-    launched from, while an explicit `REGWORLD_ARTIFACT_ROOT` still wins.
+    launched from, while an explicit `SIMWORLD_ARTIFACT_ROOT` still wins.
     """
     cfg = validate_config(compose_cfg(f"profile={_GATE_PROFILE}", "tracking=none"))
     cfg.paths.root = _absolute(cfg.paths.root)
@@ -81,7 +81,7 @@ def gate_cfg() -> RegWorldConfig:
 
 
 @pytest.fixture(scope="module")
-def abm_stats(gate_cfg: RegWorldConfig) -> dict[str, RolloutStats]:
+def abm_stats(gate_cfg: SimWorldConfig) -> dict[str, RolloutStats]:
     """Roll every gated policy in the TRUE ABM on the gate's own seed grid.
 
     Uses `planning_utility._scaled_seeds_and_draws` deliberately: the test must
@@ -107,7 +107,7 @@ def abm_stats(gate_cfg: RegWorldConfig) -> dict[str, RolloutStats]:
 
 
 @pytest.fixture(scope="module")
-def dreamer_emulator_stats(gate_cfg: RegWorldConfig) -> RolloutStats:
+def dreamer_emulator_stats(gate_cfg: SimWorldConfig) -> RolloutStats:
     """Roll the Dreamer actor in imagination (`EmulatorEnv`) for J_emulator."""
     if "rl_dreamer" not in registry.available_policies(gate_cfg):
         pytest.skip("rl_dreamer checkpoint absent; run `make rl profile=smoke` first")
@@ -188,7 +188,7 @@ def test_dreamer_exploitation_gap_within_threshold(
 
 
 def test_planning_utility_report_reflects_true_abm_rollouts(
-    gate_cfg: RegWorldConfig, abm_stats: dict[str, RolloutStats]
+    gate_cfg: SimWorldConfig, abm_stats: dict[str, RolloutStats]
 ) -> None:
     """The number the report publishes must be the true-ABM number this gate asserts on.
 

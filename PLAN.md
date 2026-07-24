@@ -1,4 +1,4 @@
-# RegWorld — Master Build Plan
+# SimWorld — Master Build Plan
 
 **A policy world model of how a data-privacy regulation propagates through firms, consumers, and institutions — built as the maximal sixteen-tool stack from *A Practical Guide to the World-Modeling Research Stack*, Part XIX.**
 
@@ -78,7 +78,7 @@ make all                   # the real run: profile=default, writes reports/FINDI
 7. **Never exceed the smoke budget.** `make smoke` must finish in **< 6 minutes on 4 CPU cores**. If a stage blows the budget, shrink the *profile*, never the science.
 8. **Parallelize where independent.** Stages 1 and 2 touch disjoint files; Stage 5 (causal) and Stage 6–7 (emulator) are independent given Stages 1–4. Use subagents for independent file groups where it helps.
 9. **Prefer boring code.** No clever abstractions. Every module under `src/` should be readable by someone who has never seen it, because in six months that person is you.
-10. **Logging, not printing.** Python `logging` throughout, configured once in `regworld/logging_conf.py`. `print()` in `src/` is banned by lint (ruff `T20`).
+10. **Logging, not printing.** Python `logging` throughout, configured once in `simworld/logging_conf.py`. `print()` in `src/` is banned by lint (ruff `T20`).
 11. **Run the fast tests constantly**, not only at gates: `uv run pytest -m "not slow" -q` should stay green while you work.
 12. When something is genuinely underspecified, choose the simplest thing that satisfies the gate, write it in `DEVIATIONS.md`, and move on. Do not stall.
 
@@ -125,7 +125,7 @@ Concretely, this buys four things a real-data project cannot have:
 - **Backtesting is honest**, because the holdout is truly held out.
 - The pipeline runs **end to end with zero external data and zero network access**, which is what makes one-command execution possible on any cluster.
 
-> **Swap point.** `configs/data/real.yaml` + `regworld/data/ingest.py` define the adapter for real firm/consumer panels. Everything downstream reads the same Parquet schema (§8), so swapping in real data changes one config group and deletes the answer key — nothing else moves. The seam is documented in `docs/REAL_DATA.md`.
+> **Swap point.** `configs/data/real.yaml` + `simworld/data/ingest.py` define the adapter for real firm/consumer panels. Everything downstream reads the same Parquet schema (§8), so swapping in real data changes one config group and deletes the answer key — nothing else moves. The seam is documented in `docs/REAL_DATA.md`.
 
 ### The six claims the pipeline must produce or refute
 
@@ -146,8 +146,8 @@ C5 is the deliverable the client asked for. C1 through C3 are what earn the righ
 
 The truth lives in exactly two places, and both are walled off:
 
-1. **The `dgp/` package is import-restricted.** Nothing downstream of Stage 1 may `import` from `regworld.dgp` except `regworld.evaluation`, which needs the answer key. Enforced by `tests/test_no_dgp_leakage.py`, which greps the source tree.
-2. **The `oracle/` artifact tree is read-restricted.** `generate.py` writes `artifacts/data/observed/` (everything may read) and `artifacts/oracle/` (θ\*, Regime P q13–24, Regime F ground-truth trajectories, `do()` counterfactuals — **`regworld.evaluation` only**). Enforced by a stack-frame check in `data/store.py::read_oracle()` *and* by the same grep test.
+1. **The `dgp/` package is import-restricted.** Nothing downstream of Stage 1 may `import` from `simworld.dgp` except `simworld.evaluation`, which needs the answer key. Enforced by `tests/test_no_dgp_leakage.py`, which greps the source tree.
+2. **The `oracle/` artifact tree is read-restricted.** `generate.py` writes `artifacts/data/observed/` (everything may read) and `artifacts/oracle/` (θ\*, Regime P q13–24, Regime F ground-truth trajectories, `do()` counterfactuals — **`simworld.evaluation` only**). Enforced by a stack-frame check in `data/store.py::read_oracle()` *and* by the same grep test.
 
 Any convenience import of ground truth into calibration, training, or the emulator invalidates the entire evaluation section. This is not a suggestion, and neither test is optional.
 
@@ -205,14 +205,14 @@ If any of these is wrong for your setting, it is a one-line change — say so an
 
 ## §4 Repository layout
 
-Follows the guide's Part XIII layout exactly, extended only where the sixteen tools demand it. One package, `regworld`, imported everywhere.
+Follows the guide's Part XIII layout exactly, extended only where the sixteen tools demand it. One package, `simworld`, imported everywhere.
 
 ```text
-regworld/
+simworld/
 ├── .github/workflows/{ci.yml, docker.yml, nightly.yml}
 ├── configs/                         # Hydra: composable groups, CLI-overridable (§6)
-├── src/regworld/
-│   ├── types.py                     # Pydantic config models; validate_config(DictConfig) -> RegWorldConfig
+├── src/simworld/
+│   ├── types.py                     # Pydantic config models; validate_config(DictConfig) -> SimWorldConfig
 │   ├── seeding.py  logging_conf.py  tracking.py
 │   ├── dgp/                         # THE ANSWER KEY — import-restricted (evaluation only)
 │   │   ├── world.py                 #   entity generation, true parameters θ*
@@ -295,10 +295,10 @@ NumPyro brings JAX. **JAX and PyTorch in one process will fight over GPU memory*
 1. **No network at runtime.** All data is generated. If a module needs the network, it is wrong.
 2. **CPU by default.** Torch CPU wheels. `device: auto` resolves to CUDA only if `torch.cuda.is_available()`. Bitwise GPU determinism is *not* pursued (§13).
 3. **Headless everywhere.** `MPLBACKEND=Agg`, no `plt.show()` in `src/`. Streamlit runs with `--server.headless true`.
-4. **Artifact root is configurable:** `REGWORLD_ARTIFACT_ROOT` (default `./artifacts`). Point it at cluster scratch or a mounted bucket; nothing else changes.
+4. **Artifact root is configurable:** `SIMWORLD_ARTIFACT_ROOT` (default `./artifacts`). Point it at cluster scratch or a mounted bucket; nothing else changes.
 5. **Ray attaches or runs local:** `ray.init(address=os.environ.get("RAY_ADDRESS", "local"), ignore_reinit_error=True)`. Zero-config locally, cluster-native when `RAY_ADDRESS` is set. Do not initialize CUDA before `ray.init()`; use spawn, not fork.
 6. **Slurm sweeps via submitit:** `make slurm` uses `hydra/launcher=submitit_slurm` (`--extra slurm`). Keep the two roles distinct — **Ray Core handles the ensemble *inside* a job; Hydra handles sweeps *across* jobs.**
-7. **Seeds flow through one function.** Everything routes through `regworld.seeding.seed_everything(seed)` and explicit `np.random.default_rng(seed)` generators. **No bare `np.random.*` calls anywhere.**
+7. **Seeds flow through one function.** Everything routes through `simworld.seeding.seed_everything(seed)` and explicit `np.random.default_rng(seed)` generators. **No bare `np.random.*` calls anywhere.**
 
 Full `pyproject.toml` in **Appendix A**, `Makefile` in **B**, `docker/` in **C**, CI in **D**.
 
@@ -375,7 +375,7 @@ observed_quarters: 12            # Regime P observation window (q13–24 = backt
 device: auto                     # auto | cpu | cuda
 
 paths:
-  root:      ${oc.env:REGWORLD_ARTIFACT_ROOT,${hydra:runtime.cwd}/artifacts}
+  root:      ${oc.env:SIMWORLD_ARTIFACT_ROOT,${hydra:runtime.cwd}/artifacts}
   data:      ${paths.root}/data
   graphs:    ${paths.root}/graphs
   reports:   ${hydra:runtime.cwd}/reports
@@ -430,7 +430,7 @@ Cutting the `dev` run without touching the science: `stages.marl=false` (−12 m
 
 ## §7 The world: ground-truth DGP specification
 
-**This is the science. Write it first and write it carefully — every other stage is graded against it. Implement the equations as written; do not improvise them.** Every symbol here is a config key, a calibrated parameter, or a known constant. The DGP lives in `regworld/dgp/` and the *pure decision functions* it uses live in `regworld/rules.py`, shared unchanged with the estimated ABM (`regworld/abm/`).
+**This is the science. Write it first and write it carefully — every other stage is graded against it. Implement the equations as written; do not improvise them.** Every symbol here is a config key, a calibrated parameter, or a known constant. The DGP lives in `simworld/dgp/` and the *pure decision functions* it uses live in `simworld/rules.py`, shared unchanged with the estimated ABM (`simworld/abm/`).
 
 ### 7.1 Entities
 
@@ -509,7 +509,7 @@ Fixed / known (not calibrated): audit budget `B`, fine scale `Φ`, targeting exp
 
 ### 7.4 Dynamics (one quarter)
 
-Implemented as **pure functions in `regworld/rules.py`**, taking `(state, θ, policy, rng)` and returning the next state with no in-place agent mutation. The DGP binds θ = θ\*; the estimated ABM binds θ = posterior draw.
+Implemented as **pure functions in `simworld/rules.py`**, taking `(state, θ, policy, rng)` and returning the next state with no in-place agent mutation. The DGP binds θ = θ\*; the estimated ABM binds θ = posterior draw.
 
 **Regulator action** `a(t) = (e_t, τ_t, φ_t, subsidy_t)` from the policy levers (§7.5). Targeting weight, audit probability, and expected penalty:
 
@@ -650,11 +650,11 @@ The confounder `z` is planted so it does **two** kinds of damage, and the pipeli
 
 ### 7.8 The historical episode (the natural experiment)
 
-`regworld/dgp/history.py` generates **Regime P**: the analogous prior regulation, run for 24 quarters, with enforcement switched on **region by region across `R` regions at staggered quarters `t_r`**, where `t_r` is drawn **independently of firm characteristics**. Rollout timing is therefore exogenous by construction — which is exactly what makes the difference-in-differences identified. Regions not yet treated at quarter `t` are the controls for regions already treated; the pre-treatment quarters give the event study its flat pre-trends (flat because we made them flat — if they are not, the DGP has a bug). Because we wrote this world, we know the true effect the DiD should recover, and Stage 5 grades it against that.
+`simworld/dgp/history.py` generates **Regime P**: the analogous prior regulation, run for 24 quarters, with enforcement switched on **region by region across `R` regions at staggered quarters `t_r`**, where `t_r` is drawn **independently of firm characteristics**. Rollout timing is therefore exogenous by construction — which is exactly what makes the difference-in-differences identified. Regions not yet treated at quarter `t` are the controls for regions already treated; the pre-treatment quarters give the event study its flat pre-trends (flat because we made them flat — if they are not, the DGP has a bug). Because we wrote this world, we know the true effect the DiD should recover, and Stage 5 grades it against that.
 
 ### 7.9 The observation model (what the "data" actually contains)
 
-`regworld/dgp/observation.py` degrades Regime P's ground truth into something that looks like a real corpus:
+`simworld/dgp/observation.py` degrades Regime P's ground truth into something that looks like a real corpus:
 
 - **Firm registry** — `size_decile, sector, association`, plus a noisy cost proxy `cost_index_i = c_i + N(0, 0.4)`. `z_i` and the true `c_i` are **absent**.
 - **Firm panel** — a 20% sample of firms, quarters 1–12, with self-reported compliance at a **one-quarter reporting lag and 5% misclassification**, `revenue_noisy`, `audited`, `fined`, `alive`, and the firm's `region` and `treatment_quarter` (the staggered-rollout structure that Stage 5 needs).
@@ -666,7 +666,7 @@ Stage 1's job is to clean and join this into an analysis-ready panel. The guide 
 
 ### 7.10 Ground-truth interventions (only the simulator can do this)
 
-`regworld/causal/ground_truth.py` runs the DGP twice from an identical state and seed, under `do(e = e_low)` and `do(e = e_high)` (and, per firm, `do(audited = 1)` vs `do(audited = 0)`), and measures the **true ATE and the true CATE by size tercile**. Every estimator in Stage 5 is scored against this. It is the guide's *"a world model can serve as the laboratory where identification strategies get stress-tested on data whose true causal structure you control, because you wrote it"* — made into a number.
+`simworld/causal/ground_truth.py` runs the DGP twice from an identical state and seed, under `do(e = e_low)` and `do(e = e_high)` (and, per firm, `do(audited = 1)` vs `do(audited = 0)`), and measures the **true ATE and the true CATE by size tercile**. Every estimator in Stage 5 is scored against this. It is the guide's *"a world model can serve as the laboratory where identification strategies get stress-tested on data whose true causal structure you control, because you wrote it"* — made into a number.
 
 ---
 
@@ -691,7 +691,7 @@ artifacts/data/observed/            # everything may read
                                     market_edges.parquet, membership_edges.parquet   (OBSERVED graph)
   views.duckdb                      DuckDB views over all of the above
 
-artifacts/oracle/                   # regworld.evaluation ONLY — see the firewall in §1
+artifacts/oracle/                   # simworld.evaluation ONLY — see the firewall in §1
   theta_star.json                   all θ*, both DGP variants
   regime_p_full.parquet             quarters 1..24, all firms, no noise, TRUE graph
   regime_f_truth.zarr               (policy, seed, quarter, variable) ground-truth futures
@@ -722,10 +722,10 @@ Contract-level signatures; the stages fill in the rest. These are the seams the 
 def seed_everything(seed: int) -> np.random.Generator: ...     # Python, NumPy, torch, JAX; returns a Generator
 
 # types.py
-def validate_config(cfg: DictConfig) -> RegWorldConfig: ...    # Pydantic; raises on any unknown/typo'd key
+def validate_config(cfg: DictConfig) -> SimWorldConfig: ...    # Pydantic; raises on any unknown/typo'd key
 
 # dgp/  (import-restricted: evaluation + tests only)
-def generate_ground_truth(cfg: RegWorldConfig) -> GenerationResult: ...   # writes observed/ + oracle/
+def generate_ground_truth(cfg: SimWorldConfig) -> GenerationResult: ...   # writes observed/ + oracle/
 
 # rules.py  (pure; shared by dgp/ and abm/)
 def firm_utility(state, theta, policy, idx) -> np.ndarray: ...            # §7.4 logit, no mutation
@@ -829,13 +829,13 @@ The stage numbering follows Part XIX of the guide (Stages 1–16); Stage 0 (reco
 - `pyproject.toml` (Appendix A) → `uv venv` → install core+dev, then each extra one at a time (§5), recording failures to `.stage_skips` → `uv lock`, commit `uv.lock`.
 - `Makefile` (B), `docker/` (C), `.github/workflows/{ci,docker,nightly}.yml` (D), `.pre-commit-config.yaml`, `.gitignore` (ignore `experiments/`, `artifacts/`, `*.zarr`, `mlruns/`).
 - `CLAUDE.md` (Appendix E) — write it now; it is what keeps you on-rails across context compaction.
-- `regworld/{seeding,logging_conf,types,tracking}.py`. `types.py` holds Pydantic models mirroring every config group and `validate_config`.
+- `simworld/{seeding,logging_conf,types,tracking}.py`. `types.py` holds Pydantic models mirroring every config group and `validate_config`.
 - Full `configs/` tree (§6), all groups present even if some are stubs with the right keys.
 - `tracking.py`: MLflow (file backend at `${paths.reports}/mlruns`, sqlite when several Ray workers log concurrently), W&B (offline unless `WANDB_API_KEY`), and a null backend. No stage imports `mlflow`/`wandb` directly. Captures `git rev-parse HEAD` on every run.
 - `scripts/run_pipeline.py`: the driver (stub the stages; fill them in as phases land). Runs stages in order per the `stages:` map, logs each to the tracker, checkpoints outputs to disk, writes `reports/run_manifest.json` and `reports/FINDINGS.md`, and honours `--force-stage <name>` and `--isolated-envs`.
 - **API probe** → `docs/DEVIATIONS.md`: import and print the version of every tool; assert Mesa exposes `model.agents`/`AgentSet` and *not* `RandomActivation`, Gymnasium `step` returns five values, PyG `HeteroConv` imports without `torch_scatter`, and record which RLlib API stack is installed (Stage 10 depends on it).
 
-**Acceptance tests** — `test_config.py` (every profile and group combination validates; a bogus key raises), `test_seeds.py` (same seed → identical `rng.random(10)`; different seeds differ), `test_tracker.py` (null writes nothing; mlflow writes a run dir), `test_layering.py` (`src/` imports nothing from `notebooks/`), `test_no_dgp_leakage.py` (no `oracle`/`dgp` path outside `regworld.evaluation`).
+**Acceptance tests** — `test_config.py` (every profile and group combination validates; a bogus key raises), `test_seeds.py` (same seed → identical `rng.random(10)`; different seeds differ), `test_tracker.py` (null writes nothing; mlflow writes a run dir), `test_layering.py` (`src/` imports nothing from `notebooks/`), `test_no_dgp_leakage.py` (no `oracle`/`dgp` path outside `simworld.evaluation`).
 
 **Gate**
 ```bash
@@ -1221,8 +1221,8 @@ make sensitivity profile=smoke && uv run pytest tests/test_sensitivity.py -q && 
 **Gate**
 ```bash
 make lint && make typecheck && make test && make smoke && \
-  docker build -f docker/Dockerfile -t regworld:ci . && \
-  docker run --rm regworld:ci python scripts/run_pipeline.py profile=smoke && echo GATE-16-OK
+  docker build -f docker/Dockerfile -t simworld:ci . && \
+  docker run --rm simworld:ci python scripts/run_pipeline.py profile=smoke && echo GATE-16-OK
 ```
 **Commit:** `feat(tooling): pytest suite, ruff/mypy/pre-commit, Docker (CPU+CUDA), CI/nightly/docker workflows, Slurm`
 
@@ -1240,7 +1240,7 @@ make lint && make typecheck && make test && make smoke && \
 **Gate** — Phase 7's gate:
 ```bash
 make smoke && make figures report && test -f reports/FINDINGS.md && \
-  docker build -f docker/Dockerfile -t regworld:ci . && echo GATE-17-OK
+  docker build -f docker/Dockerfile -t simworld:ci . && echo GATE-17-OK
 ```
 **Commit:** `feat(report): FINDINGS.md generator with claims ledger and required failure section` → then tag `v0.1.0`.
 
@@ -1248,7 +1248,7 @@ make smoke && make figures report && test -f reports/FINDINGS.md && \
 
 ## §11 Evaluation suite
 
-`scripts/eval_emulator.py` and the driver write `reports/eval/{report.md, metrics.json, figures/}`. **Twelve metric families. A credible project reports several; this one reports all of them.** Thresholds are the pass criteria at `profile=dev`; every module is under `regworld/evaluation/`.
+`scripts/eval_emulator.py` and the driver write `reports/eval/{report.md, metrics.json, figures/}`. **Twelve metric families. A credible project reports several; this one reports all of them.** Thresholds are the pass criteria at `profile=dev`; every module is under `simworld/evaluation/`.
 
 | # | Layer | Module | What it computes | Threshold |
 |---|---|---|---|---|
@@ -1287,7 +1287,7 @@ The guide is right that the highest-value tests here are the unassuming ones. `p
 
 ## §13 Reproducibility and seeds
 
-`regworld/seeding.py` exposes `seed_everything(k)`, which seeds Python's `random`, NumPy's default RNG, `torch` (CPU + CUDA), and JAX's PRNG key, and **returns a seeded `np.random.Generator` that every stochastic component takes as an argument** instead of reaching for global state.
+`simworld/seeding.py` exposes `seed_everything(k)`, which seeds Python's `random`, NumPy's default RNG, `torch` (CPU + CUDA), and JAX's PRNG key, and **returns a seeded `np.random.Generator` that every stochastic component takes as an argument** instead of reaching for global state.
 
 Rules:
 - Gymnasium seeding goes through `reset(seed=k)`. Always.
@@ -1423,7 +1423,7 @@ Core must always solve. Extras fail independently (§5); a stage whose extra fai
 
 ```toml
 [project]
-name = "regworld"
+name = "simworld"
 version = "0.1.0"
 description = "A policy world model of regulatory propagation through firms, consumers, and institutions."
 requires-python = ">=3.11,<3.13"
@@ -1460,7 +1460,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/regworld"]
+packages = ["src/simworld"]
 
 [tool.ruff]
 line-length = 100
@@ -1473,13 +1473,13 @@ select = ["E", "F", "I", "UP", "B", "SIM", "NPY", "RUF", "T20"]   # T20 bans pri
 
 [tool.mypy]
 python_version = "3.11"
-packages = ["regworld"]
+packages = ["simworld"]
 ignore_missing_imports = true
 disallow_untyped_defs = true
 warn_unused_ignores = true
 # strict where a wrong tensor shape can masquerade as a subtle result:
 [[tool.mypy.overrides]]
-module = ["regworld.models.*", "regworld.environments.*"]
+module = ["simworld.models.*", "simworld.environments.*"]
 disallow_any_generics = true
 warn_return_any = true
 
@@ -1561,9 +1561,9 @@ dashboard:       ## Streamlit
 	$(RUN) streamlit run scripts/dashboard.py --server.headless true --server.port 8501
 
 docker-build:
-	docker build -f docker/Dockerfile -t regworld:latest .
+	docker build -f docker/Dockerfile -t simworld:latest .
 docker-run:
-	docker run --rm -v $$PWD/artifacts:/work/artifacts regworld:latest python scripts/run_pipeline.py profile=$(PROFILE)
+	docker run --rm -v $$PWD/artifacts:/work/artifacts simworld:latest python scripts/run_pipeline.py profile=$(PROFILE)
 
 clean:
 	rm -rf experiments/* artifacts/* reports/figures/* .pytest_cache .mypy_cache
@@ -1588,7 +1588,7 @@ ENV PYTHONUNBUFFERED=1 \
     MPLBACKEND=Agg \
     JAX_PLATFORMS=cpu \
     XLA_PYTHON_CLIENT_PREALLOCATE=false \
-    REGWORLD_ARTIFACT_ROOT=/work/artifacts \
+    SIMWORLD_ARTIFACT_ROOT=/work/artifacts \
     UV_LINK_MODE=copy
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -1661,8 +1661,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -f docker/Dockerfile -t regworld:ci .
-      - run: docker run --rm regworld:ci python scripts/run_pipeline.py profile=smoke
+      - run: docker build -f docker/Dockerfile -t simworld:ci .
+      - run: docker run --rm simworld:ci python scripts/run_pipeline.py profile=smoke
 ```
 
 `.github/workflows/nightly.yml` runs `pytest -m slow` plus `profile=dev` on a larger runner and posts results as an artifact. `.github/workflows/docker.yml` builds and pushes both images to GHCR on tags.
@@ -1672,7 +1672,7 @@ jobs:
 ## Appendix E — `CLAUDE.md` (write this in Phase 1)
 
 ```markdown
-# RegWorld — working notes for Claude Code
+# SimWorld — working notes for Claude Code
 
 ## What this is
 A policy world model of regulatory propagation (firms × consumers × regulator × associations),
@@ -1682,7 +1682,7 @@ the model equations, §10 for the phases and stages. `PROGRESS.md` says where we
 ## Non-negotiables
 - Mesa >= 3.0 AgentSet API. No RandomActivation / self.schedule.
 - Gymnasium >= 1.0 five-tuple. `truncated` at horizon; `terminated` only on systemic collapse.
-- Nothing outside `src/regworld/evaluation/` may import `regworld.dgp` or read `artifacts/oracle/`. Ever.
+- Nothing outside `src/simworld/evaluation/` may import `simworld.dgp` or read `artifacts/oracle/`. Ever.
 - No `print()` in src/ (ruff T20). No bare `np.random.*` — seeded Generators, passed explicitly.
 - No `torch-scatter` / `torch-sparse`. No `hydra-ray-launcher`.
 - Every JAX stage (calibration) runs in a subprocess with JAX_PLATFORMS=cpu.
@@ -1693,8 +1693,8 @@ the model equations, §10 for the phases and stages. `PROGRESS.md` says where we
 make setup | lint | typecheck | test | smoke | all | sweep | slurm | dashboard | docker-build
 
 ## Where things live
-src/regworld/dgp/          the answer key (import-restricted); rules.py holds the shared pure equations
-src/regworld/{data,graphs,abm,calibration,causal,models,training,environments,agents,
+src/simworld/dgp/          the answer key (import-restricted); rules.py holds the shared pure equations
+src/simworld/{data,graphs,abm,calibration,causal,models,training,environments,agents,
               evaluation,ensemble,sensitivity,visualization}
 configs/                   Hydra groups (profile, compute, data, dgp, population, network, behavior,
                            abm, objective, calibration, causal, emulator, env, policy, rl, ensemble,
@@ -1760,19 +1760,19 @@ Where the installed reality differed from this plan. Follow the library, not the
 
 Roughly 65 source files, 15 test files, 16 scripts. Build them in phase order (§10).
 
-**Phase 1 (Foundation)** — `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/{ci,docker,nightly}.yml`, `docker/*`, `src/regworld/{__init__,types,seeding,logging_conf,tracking}.py`, `configs/**` (all groups, §6), `scripts/run_pipeline.py` (driver stub), `CLAUDE.md`, `PROGRESS.md`, `README.md`. Tests: `test_config.py`, `test_seeds.py`, `test_tracker.py`, `test_layering.py`, `test_no_dgp_leakage.py`.
+**Phase 1 (Foundation)** — `pyproject.toml`, `Makefile`, `.pre-commit-config.yaml`, `.github/workflows/{ci,docker,nightly}.yml`, `docker/*`, `src/simworld/{__init__,types,seeding,logging_conf,tracking}.py`, `configs/**` (all groups, §6), `scripts/run_pipeline.py` (driver stub), `CLAUDE.md`, `PROGRESS.md`, `README.md`. Tests: `test_config.py`, `test_seeds.py`, `test_tracker.py`, `test_layering.py`, `test_no_dgp_leakage.py`.
 
-**Phase 2 (World & data)** — `src/regworld/dgp/{world,dynamics,observation,history}.py`, `src/regworld/rules.py`; `src/regworld/data/{generate,ingest,schema,store,duck}.py`; `src/regworld/graphs/{build,analyze,to_pyg}.py`; `scripts/{generate_world,make_data,build_graphs}.py`. Tests: `test_data_schema.py`, `test_graph_construction.py`.
+**Phase 2 (World & data)** — `src/simworld/dgp/{world,dynamics,observation,history}.py`, `src/simworld/rules.py`; `src/simworld/data/{generate,ingest,schema,store,duck}.py`; `src/simworld/graphs/{build,analyze,to_pyg}.py`; `scripts/{generate_world,make_data,build_graphs}.py`. Tests: `test_data_schema.py`, `test_graph_construction.py`.
 
-**Phase 3 (Simulation)** — `src/regworld/abm/{model,agents,collect,policies,tensorized}.py`; `src/regworld/environments/{abm_env,emulator_env,marl_env,wrappers}.py`; `scripts/run_abm.py`. Tests: `test_abm_contract.py`, `test_abm_agreement.py` (slow), `test_env_contract.py`, `test_marl_env.py`.
+**Phase 3 (Simulation)** — `src/simworld/abm/{model,agents,collect,policies,tensorized}.py`; `src/simworld/environments/{abm_env,emulator_env,marl_env,wrappers}.py`; `scripts/run_abm.py`. Tests: `test_abm_contract.py`, `test_abm_agreement.py` (slow), `test_env_contract.py`, `test_marl_env.py`.
 
-**Phase 4 (Inference)** — `src/regworld/calibration/{summaries,micro_numpyro,micro_pymc,macro_smc,diagnostics}.py`; `src/regworld/causal/{graph,estimate,did,refute,discovery,ground_truth,gate}.py`; `scripts/{calibrate,causal_analysis,validate_simulator}.py`. Tests: `test_parameter_recovery.py` (slow), `test_causal_recovers_known_effect.py`.
+**Phase 4 (Inference)** — `src/simworld/calibration/{summaries,micro_numpyro,micro_pymc,macro_smc,diagnostics}.py`; `src/simworld/causal/{graph,estimate,did,refute,discovery,ground_truth,gate}.py`; `scripts/{calibrate,causal_analysis,validate_simulator}.py`. Tests: `test_parameter_recovery.py` (slow), `test_causal_recovers_known_effect.py`.
 
-**Phase 5 (Emulator)** — `src/regworld/models/{encoder,rssm,gnn,heads,world_model}.py`; `src/regworld/training/{datamodule,losses,train_emulator,checkpoint}.py`; `src/regworld/evaluation/{predictive,distributional,calibration_curves,dtw,planning_utility,behavioral_fidelity,parameter_recovery,causal_eval,ood,backtest,ablations,report}.py`; `scripts/{make_emulator_dataset,train_emulator,eval_emulator}.py`. Tests: `test_dynamics_shapes.py`, `test_smoke_train.py`.
+**Phase 5 (Emulator)** — `src/simworld/models/{encoder,rssm,gnn,heads,world_model}.py`; `src/simworld/training/{datamodule,losses,train_emulator,checkpoint}.py`; `src/simworld/evaluation/{predictive,distributional,calibration_curves,dtw,planning_utility,behavioral_fidelity,parameter_recovery,causal_eval,ood,backtest,ablations,report}.py`; `scripts/{make_emulator_dataset,train_emulator,eval_emulator}.py`. Tests: `test_dynamics_shapes.py`, `test_smoke_train.py`.
 
-**Phase 6 (Control & ensemble)** — `src/regworld/agents/{scripted,sb3_agents,dreamer,marl}.py`; `src/regworld/training/train_policy.py`; `src/regworld/ensemble/{scenarios,ray_ensemble,cube}.py`; `src/regworld/sensitivity/{salib_gsa,optuna_search,bo_policy}.py`; `scripts/{train_rl,train_marl,run_ensemble,sensitivity,optimize_policy}.py`. Tests: `test_policy.py`, `test_ensemble_shapes.py`, `test_sensitivity.py`, `test_configs.py`, `test_determinism.py`.
+**Phase 6 (Control & ensemble)** — `src/simworld/agents/{scripted,sb3_agents,dreamer,marl}.py`; `src/simworld/training/train_policy.py`; `src/simworld/ensemble/{scenarios,ray_ensemble,cube}.py`; `src/simworld/sensitivity/{salib_gsa,optuna_search,bo_policy}.py`; `scripts/{train_rl,train_marl,run_ensemble,sensitivity,optimize_policy}.py`. Tests: `test_policy.py`, `test_ensemble_shapes.py`, `test_sensitivity.py`, `test_configs.py`, `test_determinism.py`.
 
-**Phase 7 (Delivery)** — `src/regworld/visualization/{figures,interactive,dashboard}.py`; `scripts/{make_figures,build_report,dashboard}.py`; `docker/Dockerfile.cuda`, `docker/compose.yaml`; `slurm/submit.sbatch`; `docs/{DEVIATIONS,REAL_DATA,MINIMAL_PATH}.md`; `reports/FINDINGS.md`.
+**Phase 7 (Delivery)** — `src/simworld/visualization/{figures,interactive,dashboard}.py`; `scripts/{make_figures,build_report,dashboard}.py`; `docker/Dockerfile.cuda`, `docker/compose.yaml`; `slurm/submit.sbatch`; `docs/{DEVIATIONS,REAL_DATA,MINIMAL_PATH}.md`; `reports/FINDINGS.md`.
 
 ---
 

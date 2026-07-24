@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-SRC = Path(__file__).resolve().parent.parent / "src" / "regworld"
+SRC = Path(__file__).resolve().parent.parent / "src" / "simworld"
 
 
 def test_src_never_imports_notebooks() -> None:

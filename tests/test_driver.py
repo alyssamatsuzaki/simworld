@@ -10,13 +10,13 @@ from typing import Any
 
 import pytest
 
-from regworld import stages as stage_impls
-from regworld.pipeline import run_pipeline
-from regworld.tracking import NullTracker, Tracker
-from regworld.types import RegWorldConfig, StagesCfg
+from simworld import stages as stage_impls
+from simworld.pipeline import run_pipeline
+from simworld.tracking import NullTracker, Tracker
+from simworld.types import SimWorldConfig, StagesCfg
 
 
-def test_all_disabled_writes_manifest(smoke_cfg: RegWorldConfig) -> None:
+def test_all_disabled_writes_manifest(smoke_cfg: SimWorldConfig) -> None:
     manifest = run_pipeline(smoke_cfg.model_copy(update={"stages": StagesCfg()}), NullTracker())
     stages = manifest["stages"]
     assert isinstance(stages, dict)
@@ -24,7 +24,7 @@ def test_all_disabled_writes_manifest(smoke_cfg: RegWorldConfig) -> None:
     assert (Path(smoke_cfg.paths.reports) / "run_manifest.json").exists()
 
 
-def test_recon_stage_runs_and_unbuilt_stages_block(smoke_cfg: RegWorldConfig) -> None:
+def test_recon_stage_runs_and_unbuilt_stages_block(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(
         update={"stages": StagesCfg(recon=True, emulator=True, rl=True, figures=True)}
     )
@@ -49,7 +49,7 @@ def test_recon_stage_runs_and_unbuilt_stages_block(smoke_cfg: RegWorldConfig) ->
 
 
 def _fake_stage(counter: dict[str, int], out: Path) -> Any:
-    def run(cfg: RegWorldConfig, tracker: Tracker) -> list[Path]:
+    def run(cfg: SimWorldConfig, tracker: Tracker) -> list[Path]:
         counter["n"] += 1
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text("x")
@@ -59,7 +59,7 @@ def _fake_stage(counter: dict[str, int], out: Path) -> Any:
 
 
 def test_rerun_with_unchanged_config_is_cached(
-    smoke_cfg: RegWorldConfig, monkeypatch: pytest.MonkeyPatch
+    smoke_cfg: SimWorldConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = {"n": 0}
     out = Path(smoke_cfg.paths.root) / "data" / "fake.parquet"
@@ -76,7 +76,7 @@ def test_rerun_with_unchanged_config_is_cached(
 
 
 def test_watched_config_change_invalidates_cache(
-    smoke_cfg: RegWorldConfig, monkeypatch: pytest.MonkeyPatch
+    smoke_cfg: SimWorldConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     calls = {"n": 0}
     out = Path(smoke_cfg.paths.root) / "data" / "fake.parquet"
@@ -93,7 +93,7 @@ def test_watched_config_change_invalidates_cache(
 
 
 def test_force_stage_reruns_stage_and_downstream(
-    smoke_cfg: RegWorldConfig, monkeypatch: pytest.MonkeyPatch
+    smoke_cfg: SimWorldConfig, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     counters = {name: {"n": 0} for name in ("data", "graphs", "abm")}
     for name in counters:
@@ -111,7 +111,7 @@ def test_force_stage_reruns_stage_and_downstream(
     assert {n: c["n"] for n, c in counters.items()} == {"data": 1, "graphs": 2, "abm": 2}
 
 
-def test_force_stage_unknown_name_raises(smoke_cfg: RegWorldConfig) -> None:
+def test_force_stage_unknown_name_raises(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(update={"force_stage": "emulatr", "stages": StagesCfg()})
     with pytest.raises(ValueError, match="emulatr"):
         run_pipeline(cfg, NullTracker())
@@ -136,7 +136,7 @@ def subprocess_recorder(monkeypatch: pytest.MonkeyPatch) -> list[tuple[list[str]
 
 
 def test_isolated_stage_syncs_group_venv_and_runs_via_uv(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
     subprocess_recorder: list[tuple[list[str], dict[str, str]]],
 ) -> None:
     cfg = smoke_cfg.model_copy(update={"isolated_envs": True})
@@ -152,7 +152,7 @@ def test_isolated_stage_syncs_group_venv_and_runs_via_uv(
 
 
 def test_isolated_stage_core_group_and_multi_script(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
     subprocess_recorder: list[tuple[list[str], dict[str, str]]],
 ) -> None:
     cfg = smoke_cfg.model_copy(update={"isolated_envs": True})
@@ -165,7 +165,7 @@ def test_isolated_stage_core_group_and_multi_script(
 
 
 def test_isolated_sync_issued_once_per_group(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
     subprocess_recorder: list[tuple[list[str], dict[str, str]]],
 ) -> None:
     cfg = smoke_cfg.model_copy(update={"isolated_envs": True})
@@ -181,7 +181,7 @@ def test_isolated_sync_issued_once_per_group(
 
 
 def test_pipeline_routes_script_stages_through_uv_when_isolated(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
     subprocess_recorder: list[tuple[list[str], dict[str, str]]],
 ) -> None:
     cfg = smoke_cfg.model_copy(
@@ -196,7 +196,7 @@ def test_pipeline_routes_script_stages_through_uv_when_isolated(
 
 
 def test_non_isolated_run_script_uses_current_interpreter(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
     subprocess_recorder: list[tuple[list[str], dict[str, str]]],
 ) -> None:
     assert smoke_cfg.isolated_envs is False

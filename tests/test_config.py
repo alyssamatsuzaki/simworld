@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from regworld.types import validate_config
+from simworld.types import validate_config
 
 from .conftest import CONFIG_DIR, compose_cfg
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from regworld.rules import SegmentAttributes, allocate_spend
+from simworld.rules import SegmentAttributes, allocate_spend
 
 
 def test_allocate_spend_excludes_dead_firms_and_conserves_budgets() -> None:

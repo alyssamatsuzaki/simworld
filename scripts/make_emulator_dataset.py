@@ -3,10 +3,10 @@
 import hydra
 from omegaconf import DictConfig
 
-from regworld.logging_conf import get_logger, setup_logging
-from regworld.seeding import seed_everything
-from regworld.training.datamodule import build_dataset
-from regworld.types import validate_config
+from simworld.logging_conf import get_logger, setup_logging
+from simworld.seeding import seed_everything
+from simworld.training.datamodule import build_dataset
+from simworld.types import validate_config
 
 log = get_logger(__name__)
 

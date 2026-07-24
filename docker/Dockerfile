@@ -6,7 +6,7 @@ ENV PYTHONUNBUFFERED=1 \
     MPLBACKEND=Agg \
     JAX_PLATFORMS=cpu \
     XLA_PYTHON_CLIENT_PREALLOCATE=false \
-    REGWORLD_ARTIFACT_ROOT=/work/artifacts \
+    SIMWORLD_ARTIFACT_ROOT=/work/artifacts \
     UV_LINK_MODE=copy
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

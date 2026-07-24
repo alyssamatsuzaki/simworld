@@ -29,7 +29,7 @@ observed_quarters: 12            # Regime P observation window (q13-24 = backtes
 device: auto                     # auto | cpu | cuda
 
 paths:
-  root:      ${oc.env:REGWORLD_ARTIFACT_ROOT,artifacts}
+  root:      ${oc.env:SIMWORLD_ARTIFACT_ROOT,artifacts}
   data:      ${paths.root}/data
   graphs:    ${paths.root}/graphs
   reports:   reports

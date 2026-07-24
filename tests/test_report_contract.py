@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from regworld.evaluation.report import build_findings
-from regworld.types import PathsCfg, RegWorldConfig, StagesCfg
+from simworld.evaluation.report import build_findings
+from simworld.types import PathsCfg, SimWorldConfig, StagesCfg
 
 
 def test_build_findings_produces_findings_md():
     """build_findings writes reports/FINDINGS.md and returns its path."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        cfg = RegWorldConfig(
+        cfg = SimWorldConfig(
             seed=0,
             profile_name="smoke",
             paths=PathsCfg(
@@ -54,7 +54,7 @@ def test_build_findings_contains_required_heading_where_this_model_fails():
     """The generated report CONTAINS the required 'Where this model fails' heading."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        cfg = RegWorldConfig(
+        cfg = SimWorldConfig(
             seed=0,
             profile_name="smoke",
             paths=PathsCfg(
@@ -91,7 +91,7 @@ def test_disclaimer_precedes_claims():
     """The disclaimer appears before any C1-C6 verdict in the report."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        cfg = RegWorldConfig(
+        cfg = SimWorldConfig(
             seed=0,
             profile_name="smoke",
             paths=PathsCfg(
@@ -130,7 +130,7 @@ def test_four_number_table_labels_present():
     """The generated report contains the four-number table labels."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        cfg = RegWorldConfig(
+        cfg = SimWorldConfig(
             seed=0,
             profile_name="smoke",
             paths=PathsCfg(
@@ -178,7 +178,7 @@ def test_graceful_degradation_missing_artifacts():
     """If artifacts are missing, the report is written with explicit missing-artifact notes."""
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir_path = Path(tmpdir)
-        cfg = RegWorldConfig(
+        cfg = SimWorldConfig(
             seed=0,
             profile_name="smoke",
             paths=PathsCfg(
@@ -205,7 +205,7 @@ def test_graceful_degradation_missing_artifacts():
 @pytest.mark.skip(reason="Requires committed artifacts from a full run")
 def test_build_findings_on_committed_artifacts():
     """Integration test: build_findings on committed artifacts (smoke profile)."""
-    cfg = RegWorldConfig(
+    cfg = SimWorldConfig(
         seed=0,
         profile_name="smoke",
         paths=PathsCfg(root="artifacts", reports="reports"),

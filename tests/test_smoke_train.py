@@ -11,14 +11,14 @@ from __future__ import annotations
 
 import torch
 
-from regworld.training.losses import (
+from simworld.training.losses import (
     symlog,
     symlog_mse,
     two_hot_bins,
     two_hot_decode,
     two_hot_encode,
 )
-from regworld.training.train_emulator import reconstruction_loss, train_step
+from simworld.training.train_emulator import reconstruction_loss, train_step
 
 from .test_dynamics_shapes import tiny_batch, tiny_model
 

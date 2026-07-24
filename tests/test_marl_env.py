@@ -5,8 +5,8 @@ from __future__ import annotations
 import numpy as np
 from pettingzoo.test import parallel_api_test
 
-from regworld.environments.marl_env import RegulationMARLEnv
-from regworld.types import RegWorldConfig
+from simworld.environments.marl_env import RegulationMARLEnv
+from simworld.types import SimWorldConfig
 
 from .test_env_contract import FakeRegulationModel, fake_factory
 
@@ -15,14 +15,14 @@ def _actions(env: RegulationMARLEnv) -> dict[str, np.ndarray]:
     return {agent: env.action_space(agent).sample() * 0 for agent in env.agents}
 
 
-def test_parallel_api(smoke_cfg: RegWorldConfig) -> None:
+def test_parallel_api(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.env.n_strategic_firms = 3
     parallel_api_test(RegulationMARLEnv(cfg, model_factory=fake_factory()), num_cycles=100)
 
 
 def test_strategic_controls_and_profit_rewards_are_real(
-    smoke_cfg: RegWorldConfig,
+    smoke_cfg: SimWorldConfig,
 ) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.env.n_strategic_firms = 2
@@ -39,7 +39,7 @@ def test_strategic_controls_and_profit_rewards_are_real(
     assert env.model._lobby[env.model.firms.association[firm_id]] == 1.0
 
 
-def test_dead_firm_terminates_without_regulator(smoke_cfg: RegWorldConfig) -> None:
+def test_dead_firm_terminates_without_regulator(smoke_cfg: SimWorldConfig) -> None:
     cfg = smoke_cfg.model_copy(deep=True)
     cfg.env.n_strategic_firms = 2
     env = RegulationMARLEnv(cfg, model_factory=fake_factory(kill_largest=True))

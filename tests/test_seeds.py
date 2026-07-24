@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from regworld.seeding import seed_everything, spawn
+from simworld.seeding import seed_everything, spawn
 
 
 def test_same_seed_identical() -> None:

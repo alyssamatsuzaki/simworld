@@ -67,9 +67,9 @@ dashboard:       ## Streamlit
 	$(RUN) streamlit run scripts/dashboard.py --server.headless true --server.port 8501
 
 docker-build:
-	docker build -f docker/Dockerfile -t regworld:latest .
+	docker build -f docker/Dockerfile -t simworld:latest .
 docker-run:
-	docker run --rm -v $$PWD/artifacts:/work/artifacts regworld:latest python scripts/run_pipeline.py profile=$(PROFILE)
+	docker run --rm -v $$PWD/artifacts:/work/artifacts simworld:latest python scripts/run_pipeline.py profile=$(PROFILE)
 
 clean:
 	rm -rf experiments/* artifacts/* reports/figures/* .pytest_cache .mypy_cache

@@ -1,9 +1,9 @@
-# RegWorld
+# SimWorld
 
 **A synthetic world model of regulatory propagation, built as the maximal sixteen-tool
 research stack — and graded, end to end, against a ground truth it planted itself.**
 
-RegWorld simulates how a data-privacy regulation ripples through a population of firms,
+SimWorld simulates how a data-privacy regulation ripples through a population of firms,
 consumers, industry associations, and a regulator, then asks the questions a policy team
 actually cares about: *what is the distribution of outcomes over the next six years, and
 which enforcement policy produces the best one under honest uncertainty?* Because the world
@@ -66,8 +66,8 @@ uncertainty?
 ### Why a synthetic world is the design, not a compromise
 
 There is no real firm registry in the sandbox, and there would not be a *labeled* one in the
-real world either. So RegWorld builds its own world first: a ground-truth data-generating
-process (the **DGP**, [`src/regworld/dgp/`](src/regworld/dgp/)) with known parameters **θ\***,
+real world either. So SimWorld builds its own world first: a ground-truth data-generating
+process (the **DGP**, [`src/simworld/dgp/`](src/simworld/dgp/)) with known parameters **θ\***,
 a known causal graph, a deliberately planted unobserved confounder, and a staggered historical
 rollout. Everything downstream then has something to be graded against. This buys four things a
 real-data project can never have:
@@ -157,7 +157,7 @@ result honestly if that is what comes out.
 
 ## 4. Architecture: the sixteen-tool stack
 
-RegWorld is deliberately the **maximal** stack from *A Practical Guide to the World-Modeling
+SimWorld is deliberately the **maximal** stack from *A Practical Guide to the World-Modeling
 Research Stack*, Part XIX — chosen for pedagogy, not because a real project should build all of
 it. Every row below is auditable; a missing module means the build is incomplete.
 [`docs/MINIMAL_PATH.md`](docs/MINIMAL_PATH.md) says where a real project stops (Stage 4) and why.
@@ -193,7 +193,7 @@ truth into calibration, training, or the emulator would invalidate the entire ev
 section, so it is enforced mechanically:
 
 1. **The `dgp/` package is import-restricted.** Nothing downstream of Stage 1 may import from
-   `regworld.dgp` except `regworld.evaluation`. Enforced by
+   `simworld.dgp` except `simworld.evaluation`. Enforced by
    [`tests/test_no_dgp_leakage.py`](tests/test_no_dgp_leakage.py), which greps the entire source
    tree *and* the `scripts/` entry points for both static and dynamic import forms.
 2. **The `artifacts/oracle/` tree is read-restricted.** `generate.py` writes
@@ -666,7 +666,7 @@ simworld/
 │                               #   behavior, calibration, causal, emulator, env, policy, rl,
 │                               #   ensemble, sensitivity, tracking, eval, compute, hydra)
 ├── scripts/                    # one Hydra entry point per stage; run_pipeline.py runs them all
-├── src/regworld/
+├── src/simworld/
 │   ├── dgp/                    # THE ANSWER KEY — import-restricted (evaluation only): θ*, world,
 │   │                           #   dynamics, observation model
 │   ├── rules.py                # the shared pure decision equations (used by BOTH dgp/ and abm/)
@@ -715,7 +715,7 @@ result. [`PROGRESS.md`](PROGRESS.md) is the current build status.
 
 ---
 
-RegWorld is the **maximal** stack, built deliberately for pedagogy — not the stack a real
+SimWorld is the **maximal** stack, built deliberately for pedagogy — not the stack a real
 project should build. Its worth is in the seams: it shows what each of the sixteen tools is
 *for* by making the world hard enough that each one has to earn its place, and it is honest,
 stage by stage, about which claims the evidence supports and which it does not.

@@ -35,7 +35,7 @@ the standard observed support files under `${paths.data}/observed/`:
 - `graphs/supply_edges.parquet`
 - `graphs/market_edges.parquet`
 
-These files use the contracts in `regworld.data.schema`. Supply-edge endpoints may
+These files use the contracts in `simworld.data.schema`. Supply-edge endpoints may
 be serialized as `0` or `firm_0`. Provide only observed/degraded edges, never a true
 or answer-key graph.
 

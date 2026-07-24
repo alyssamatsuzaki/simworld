@@ -13,17 +13,17 @@ import polars as pl
 import pytest
 from polars.testing import assert_frame_equal
 
-from regworld.data.generate import generate_ground_truth
-from regworld.data.ingest import ingest, read_panel_analysis
-from regworld.data.schema import ALL_OBSERVED, FIRM_PANEL, validate_table
-from regworld.data.store import read_observed, read_oracle
-from regworld.types import PopulationCfg, RegWorldConfig
+from simworld.data.generate import generate_ground_truth
+from simworld.data.ingest import ingest, read_panel_analysis
+from simworld.data.schema import ALL_OBSERVED, FIRM_PANEL, validate_table
+from simworld.data.store import read_observed, read_oracle
+from simworld.types import PopulationCfg, SimWorldConfig
 
 
 @pytest.fixture(scope="module")
-def world(tmp_path_factory: pytest.TempPathFactory) -> RegWorldConfig:
+def world(tmp_path_factory: pytest.TempPathFactory) -> SimWorldConfig:
     """A small generated world shared by every test in this module."""
-    from regworld.types import validate_config
+    from simworld.types import validate_config
 
     from .conftest import compose_cfg
 
@@ -45,12 +45,12 @@ def world(tmp_path_factory: pytest.TempPathFactory) -> RegWorldConfig:
     return cfg
 
 
-def test_all_observed_tables_validate(world: RegWorldConfig) -> None:
+def test_all_observed_tables_validate(world: SimWorldConfig) -> None:
     for name, spec in ALL_OBSERVED.items():
         validate_table(read_observed(world, name, validate=False), spec)
 
 
-def test_row_counts_and_keys(world: RegWorldConfig) -> None:
+def test_row_counts_and_keys(world: SimWorldConfig) -> None:
     registry = read_observed(world, "firm_registry")
     assert registry.height == 100
     panel = read_observed(world, "firm_panel")
@@ -62,7 +62,7 @@ def test_row_counts_and_keys(world: RegWorldConfig) -> None:
     assert agg.height == world.observed_quarters
 
 
-def test_raw_panel_matches_plan_contract_exactly(world: RegWorldConfig) -> None:
+def test_raw_panel_matches_plan_contract_exactly(world: SimWorldConfig) -> None:
     panel = read_observed(world, "firm_panel")
     assert panel.columns == list(FIRM_PANEL.schema)
     assert panel.schema["reported_compliant"] == pl.Boolean
@@ -79,7 +79,7 @@ def test_raw_panel_matches_plan_contract_exactly(world: RegWorldConfig) -> None:
     assert hidden_regressors.isdisjoint(panel.columns)
 
 
-def test_validation_rejects_extra_and_nonfinite_columns(world: RegWorldConfig) -> None:
+def test_validation_rejects_extra_and_nonfinite_columns(world: SimWorldConfig) -> None:
     panel = read_observed(world, "firm_panel")
     with pytest.raises(ValueError, match="unexpected columns"):
         validate_table(panel.with_columns(pl.lit(1).alias("hidden_truth")), FIRM_PANEL)
@@ -94,10 +94,10 @@ def test_validation_rejects_extra_and_nonfinite_columns(world: RegWorldConfig) -
             validate_table(bad, FIRM_PANEL)
 
 
-def test_write_observed_rejects_unspecced_table(world: RegWorldConfig, tmp_path: Path) -> None:
+def test_write_observed_rejects_unspecced_table(world: SimWorldConfig, tmp_path: Path) -> None:
     """An observed table without a schema spec must never be written unvalidated —
     validate_table's unexpected-column rejection is part of the leakage guarantee."""
-    from regworld.data.store import write_observed
+    from simworld.data.store import write_observed
 
     cfg = world.model_copy(deep=True)
     cfg.paths.data = str(tmp_path / "data")
@@ -106,13 +106,13 @@ def test_write_observed_rejects_unspecced_table(world: RegWorldConfig, tmp_path:
     assert not (tmp_path / "data" / "observed" / "mystery_table.parquet").exists()
 
 
-def test_registry_has_no_answer_key_columns(world: RegWorldConfig) -> None:
+def test_registry_has_no_answer_key_columns(world: SimWorldConfig) -> None:
     registry = read_observed(world, "firm_registry")
     forbidden = {"capacity", "z", "capacity_z", "beta", "size"}  # continuous size is hidden too
     assert not forbidden & set(registry.columns)
 
 
-def test_observation_model_sanity(world: RegWorldConfig) -> None:
+def test_observation_model_sanity(world: SimWorldConfig) -> None:
     """Observed aggregates track the oracle truth within noise (§10 Stage 1: 3 sigma_obs).
 
     The criterion is a max over the 12 observed quarters, so 3 sigma is not
@@ -133,7 +133,7 @@ def test_observation_model_sanity(world: RegWorldConfig) -> None:
     assert diff.max() < 3 * world.dgp.sigma_obs + 1e-6
 
 
-def test_compliance_actually_rises_in_regime_p(world: RegWorldConfig) -> None:
+def test_compliance_actually_rises_in_regime_p(world: SimWorldConfig) -> None:
     """The world is not degenerate: enforcement produces adoption."""
     truth = read_oracle(world, "regime_p_full")
     q_last = truth.filter(pl.col("quarter") == world.horizon_quarters)
@@ -141,7 +141,7 @@ def test_compliance_actually_rises_in_regime_p(world: RegWorldConfig) -> None:
     assert q_last["compliant"].mean() > q_first["compliant"].mean() + 0.1
 
 
-def test_generation_deterministic(world: RegWorldConfig, tmp_path: Path) -> None:
+def test_generation_deterministic(world: SimWorldConfig, tmp_path: Path) -> None:
     """Same seed → byte-identical Parquet (checksums compared across two runs)."""
     cfg2 = world.model_copy(deep=True)
     cfg2.paths.root = str(tmp_path / "artifacts")
@@ -156,7 +156,7 @@ def test_generation_deterministic(world: RegWorldConfig, tmp_path: Path) -> None
         assert ha == hb, f"{name} not byte-identical across identical seeds"
 
 
-def test_ingest_alignment(world: RegWorldConfig) -> None:
+def test_ingest_alignment(world: SimWorldConfig) -> None:
     df = read_panel_analysis(world)
     assert int(df["quarter"].max()) == world.observed_quarters - 1  # last decision quarter
     assert int(df["quarter"].min()) >= 1
@@ -167,7 +167,7 @@ def test_ingest_alignment(world: RegWorldConfig) -> None:
     assert (et["event_time"] == et["quarter"] - et["treatment_quarter"]).all()
 
 
-def test_ingest_hats_come_from_observed_inputs(world: RegWorldConfig) -> None:
+def test_ingest_hats_come_from_observed_inputs(world: SimWorldConfig) -> None:
     panel = read_observed(world, "firm_panel")
     analysis = read_panel_analysis(world).sort("firm_id", "quarter")
 
@@ -250,7 +250,7 @@ def test_ingest_hats_come_from_observed_inputs(world: RegWorldConfig) -> None:
         assert values.n_unique() > 1, name
 
 
-def test_real_panel_path_adapter(world: RegWorldConfig, tmp_path: Path) -> None:
+def test_real_panel_path_adapter(world: SimWorldConfig, tmp_path: Path) -> None:
     cfg = world.model_copy(deep=True)
     cfg.paths.root = str(tmp_path / "artifacts")
     cfg.paths.data = str(tmp_path / "artifacts/data")
@@ -265,7 +265,7 @@ def test_real_panel_path_adapter(world: RegWorldConfig, tmp_path: Path) -> None:
     )
 
 
-def test_historical_ingest_is_invariant_to_forecast_policy(world: RegWorldConfig) -> None:
+def test_historical_ingest_is_invariant_to_forecast_policy(world: SimWorldConfig) -> None:
     expected = read_panel_analysis(world).sort("firm_id", "quarter")
     cfg = world.model_copy(deep=True)
     cfg.policy = cfg.policy.model_copy(
@@ -283,19 +283,19 @@ def test_historical_ingest_is_invariant_to_forecast_policy(world: RegWorldConfig
     )
 
 
-def test_true_effects_exist_and_positive(world: RegWorldConfig) -> None:
+def test_true_effects_exist_and_positive(world: SimWorldConfig) -> None:
     eff = read_oracle(world, "true_effects")
     assert eff["tau_true_onset_att"] > 0.0, "enforcement onset must raise compliance"
     assert eff["tau_true_audit_ate"] >= 0.0
     assert len(eff["tau_true_onset_per_quarter"]) == world.observed_quarters
 
 
-def test_oracle_guard_blocks_unauthorized_caller(world: RegWorldConfig, tmp_path: Path) -> None:
+def test_oracle_guard_blocks_unauthorized_caller(world: SimWorldConfig, tmp_path: Path) -> None:
     mod = tmp_path / "sneaky_module.py"
     mod.write_text(
         textwrap.dedent(
             """
-            from regworld.data.store import read_oracle
+            from simworld.data.store import read_oracle
 
             def peek(cfg):
                 return read_oracle(cfg, "theta_star")
@@ -312,6 +312,6 @@ def test_oracle_guard_blocks_unauthorized_caller(world: RegWorldConfig, tmp_path
         sneaky.peek(world)
 
 
-def test_oracle_guard_allows_tests(world: RegWorldConfig) -> None:
+def test_oracle_guard_allows_tests(world: SimWorldConfig) -> None:
     theta = read_oracle(world, "theta_star")
     assert theta["beta_peer"] == 1.4
