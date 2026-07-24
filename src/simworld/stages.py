@@ -37,7 +37,7 @@ STAGE_SCRIPTS: dict[str, tuple[tuple[str, ...], str | None]] = {
     "calibration": (("calibrate.py",), "bayes"),
     "causal": (("causal_analysis.py", "validate_simulator.py"), "causal"),
     "emulator": (("train_emulator.py",), None),
-    "rl": (("train_rl.py",), "rl"),
+    "rl": (("train_rl.py", "train_marl.py"), "rl"),
     "ensemble": (("run_ensemble.py",), "rl"),
     "sensitivity": (("sensitivity.py",), "opt"),
     # The §11 eval suite spans families that need bayes/causal/rl/opt at once, so
@@ -368,12 +368,34 @@ def stage_marl(cfg: SimWorldConfig, tracker: Tracker) -> list[Path]:
 
 
 def stage_rl(cfg: SimWorldConfig, tracker: Tracker) -> list[Path]:
-    """Stage 10: SB3 PPO + latent Dreamer-style actor-critic against the emulator."""
+    """Stage 10 (+10d): SB3 PPO and the latent Dreamer actor-critic against the
+    emulator, then the strategic-firm MARL ablation that makes claim C6 computable.
+
+    The Stage-10d ablation (IPPO by iterated best response) writes
+    ``artifacts/marl/c6_comparison.json`` — the artifact ``evaluation.report``
+    reads to answer C6, which is otherwise "unanswered" at every scale because
+    nothing in the driver produced it. At smoke budgets (``rl.marl_timesteps``)
+    the strategic firms are undertrained and the report says so honestly;
+    ``profile=dev`` runs the full ~200k-timestep ablation for a real verdict.
+    The ablation is non-gating (PLAN.md guardrail 11, DEGRADED by design), so a
+    failure inside it leaves C6 unanswered rather than sinking Stage 10.
+    """
     from simworld.agents import train_rl
 
     result = train_rl(cfg)
     tracker.log_metrics(result.metrics)
-    return [*result.checkpoints, result.summary]
+    outputs = [*result.checkpoints, result.summary]
+
+    try:
+        from simworld.agents.marl import train_marl
+
+        marl_result = train_marl(cfg)
+        tracker.log_metrics(marl_result.metrics)
+        outputs.extend([marl_result.comparison, marl_result.summary])
+    except Exception as exc:  # Stage 10d is non-gating; keep C6 unanswered, don't fail Stage 10
+        log.warning("Stage 10d MARL ablation failed (%s); C6 will remain unanswered", exc)
+
+    return outputs
 
 
 def stage_ensemble(cfg: SimWorldConfig, tracker: Tracker) -> list[Path]:

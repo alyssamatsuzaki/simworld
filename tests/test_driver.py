@@ -180,6 +180,20 @@ def test_isolated_sync_issued_once_per_group(
     ]
 
 
+def test_c6_marl_ablation_wired_into_rl_stage() -> None:
+    """Regression guard: the Stage-10d MARL ablation must stay wired into the driver.
+
+    It was once orphaned — only ``scripts/train_marl.py`` existed, never a stage —
+    so ``artifacts/marl/c6_comparison.json`` was never produced and claim C6 was
+    unanswerable at every scale. The rl stage carries ``train_marl.py`` in its
+    script list (isolated path) and runs it in the ``rl`` extras group (SB3).
+    """
+    scripts, group = stage_impls.STAGE_SCRIPTS["rl"]
+    assert "train_rl.py" in scripts
+    assert "train_marl.py" in scripts, "C6 MARL ablation orphaned again — see stage_rl"
+    assert group == "rl"
+
+
 def test_pipeline_routes_script_stages_through_uv_when_isolated(
     smoke_cfg: SimWorldConfig,
     subprocess_recorder: list[tuple[list[str], dict[str, str]]],

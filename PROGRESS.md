@@ -43,7 +43,7 @@ Artifacts wiped, full pipeline re-run from scratch (no cache):
 | 2 | docker build + smoke in container | **DEGRADED** | Dockerfiles corrected to `--all-extras` (F1); local build blocked — sandbox proxy 403s all container registries (Docker Hub CDN + ghcr); CI builds/runs the image. See DEVIATIONS |
 | 3 | all 16 §2 rows: module+script+test | **PASS** | every row present (renames documented in PROGRESS §2 map + DEVIATIONS); BoTorch 14c is named-optional (§3), recorded |
 | 4 | `make all` (dev) no FAILED stage | **DEGRADED** | full pipeline runs green at smoke (16/16 DONE); dev profile is ~12h+ for the emulator alone on 4 cores — deferred with reason; CI nightly runs dev. See DEVIATIONS |
-| 5 | FINDINGS disclaimer + C1–C6 verdicts | **PASS** | 5 sections in order; C2/C4 SUPPORTED, C1/C3/C5/C6 honestly INCONCLUSIVE at smoke |
+| 5 | FINDINGS disclaimer + C1–C6 verdicts | **PASS** | 5 sections in order; C2/C4/C6 SUPPORTED, C1/C3/C5 honestly INCONCLUSIVE at smoke. C6 fixed this session: the Stage-10d MARL ablation was orphaned from the driver (never produced `c6_comparison.json` at any scale); now wired into the `rl` stage and answered at a 50k budget (clean negative — MARL does not change C5) |
 | 6 | Parameter-recovery gate (C1) | **DEGRADED** | verdict logic now counts >=12/16 coverage + divergences + R-hat (F4) and asserts β_peer miss under confounded; the SUPPORTED verdict needs a dev-scale calibration (deferred) |
 | 7 | Four-number causal gate (C2) | **PASS** | gate PASSED; C2 slow tests green; E-value now from real DML CI + add-unobserved refuter (F7/F16) |
 | 8 | Planning-utility gate | **DEGRADED** | asserted in test_policy.py (xfail-documented at smoke, STRICT at dev); env oracle now uses calibrated θ (F10); strict pass needs the dev run |

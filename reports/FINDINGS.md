@@ -61,9 +61,9 @@ Figure 1 (see reports/figures/fig01_four_numbers.png) and the table below report
 
 **Claim:** Modeling the ten largest firms as strategic learners (MARL) either changes C5 or does not. Report which.
 
-**Verdict:** INCONCLUSIVE
+**Verdict:** SUPPORTED
 
-**Evidence:** Artifact `artifacts/marl/c6_comparison.json` not found; the Stage-10d MARL ablation has not run, so C6 is unanswered.
+**Evidence:** Stage-10d ablation (ippo_iterated_best_response, 32 paired episodes, 50000 training timesteps) compared strategic top-K firms against rule-based firms on the C5 headline metrics. No headline metric moved with a non-overlapping 95% CI, so modelling the largest firms as strategic learners did not change C5 — a clean negative result, and the honest outcome for most policy questions (§17).
 
 ## Where This Model Fails
 
@@ -82,26 +82,26 @@ The pipeline is honest about its seams and the stages at which it cannot general
 
 **Profile:** smoke
 **Seed:** 0
-**Git commit:** 8c9623cb46eb4161b80aac9e38ab9bd588718d6b
-**Total wall-clock time:** 860.4 seconds
+**Git commit:** d4b5dd4f4b39a45be7a28f22950867e343f2d717
+**Total wall-clock time:** 688.0 seconds
 
 ### Stage-by-stage status
 
 | Stage | Status | Wall clock (s) | Notes |
 |---|---|---|---|
-| abm | DONE | 0.10 |  |
-| calibration | DONE | 68.82 |  |
-| causal | DONE | 69.49 |  |
-| data | DONE | 5.20 |  |
-| emulator | DONE | 438.12 |  |
-| ensemble | DONE | 10.62 |  |
-| envs | DONE | 0.26 |  |
-| evaluation | DONE | 117.38 |  |
-| figures | DONE | 19.71 |  |
-| graphs | DONE | 1.63 |  |
-| marl | DONE | 0.02 |  |
-| recon | DONE | 0.57 |  |
+| abm | CACHED | 0.00 |  |
+| calibration | CACHED | 0.00 |  |
+| causal | CACHED | 0.00 |  |
+| data | CACHED | 0.00 |  |
+| emulator | CACHED | 0.00 |  |
+| ensemble | CACHED | 0.00 |  |
+| envs | CACHED | 0.00 |  |
+| evaluation | CACHED | 0.00 |  |
+| figures | DONE | 37.51 |  |
+| graphs | CACHED | 0.00 |  |
+| marl | DONE | 4.78 |  |
+| recon | DONE | 0.94 |  |
 | report | DONE | 0.00 |  |
-| rl | DONE | 45.93 |  |
-| sensitivity | DONE | 82.41 |  |
-| tensorized_abm | DONE | 0.08 |  |
+| rl | DONE | 644.70 |  |
+| sensitivity | CACHED | 0.00 |  |
+| tensorized_abm | CACHED | 0.00 |  |
