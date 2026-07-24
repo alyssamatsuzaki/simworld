@@ -12,3 +12,4 @@ smc_abc:
   quantile: 0.5
 device: cpu
 did_penalty: 0.0
+recovery_grid: false

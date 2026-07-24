@@ -127,6 +127,7 @@ class CalibrationCfg(_Cfg):
     smc_abc: SmcAbcCfg = Field(default_factory=SmcAbcCfg)
     device: Literal["cpu", "gpu"] = "cpu"
     did_penalty: float = 0.0  # >0 after a FLAGGED 5f gate: moment-match the DiD estimate
+    recovery_grid: bool = False  # C1 contrast: re-calibrate under wellspecified AND confounded
 
 
 class CausalCfg(_Cfg):

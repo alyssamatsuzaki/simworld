@@ -13,7 +13,7 @@ import pytest
 from simworld import stages as stage_impls
 from simworld.pipeline import run_pipeline
 from simworld.tracking import NullTracker, Tracker
-from simworld.types import SimWorldConfig, StagesCfg
+from simworld.types import SimWorldConfig, StagesCfg, validate_config
 
 
 def test_all_disabled_writes_manifest(smoke_cfg: SimWorldConfig) -> None:
@@ -192,6 +192,65 @@ def test_c6_marl_ablation_wired_into_rl_stage() -> None:
     assert "train_rl.py" in scripts
     assert "train_marl.py" in scripts, "C6 MARL ablation orphaned again — see stage_rl"
     assert group == "rl"
+
+
+def test_c1_recovery_grid_flag_off_at_smoke_on_at_dev() -> None:
+    """The C1 contrast is gated: off at smoke (< 6 min budget), on at dev."""
+    from tests.conftest import compose_cfg
+
+    smoke = validate_config(compose_cfg("profile=smoke"))
+    dev = validate_config(compose_cfg("profile=dev"))
+    assert smoke.calibration.recovery_grid is False
+    assert dev.calibration.recovery_grid is True
+
+
+def test_c1_recovery_grid_wired_into_calibration_stage() -> None:
+    """Regression guard: stage_calibration must run the recovery grid when enabled.
+
+    C1 is a two-world contrast; a single pipeline run ships one dgp variant, so
+    without this the wellspecified-vs-confounded contrast is un-producible at any scale.
+    """
+    import inspect
+
+    src = inspect.getsource(stage_impls.stage_calibration)
+    assert "recovery_grid.py" in src, "C1 recovery grid orphaned from stage_calibration"
+    assert "cfg.calibration.recovery_grid" in src
+
+
+def test_c1_recovery_grid_contrast_is_consumed(smoke_cfg: SimWorldConfig) -> None:
+    """evaluate() reports the two-world contrast when recovery_grid.json is present:
+    coverage + convergence from the wellspecified cell, β_peer miss from the confounded
+    cell — not the shipped single variant."""
+    from simworld.evaluation import parameter_recovery
+
+    calib = Path(smoke_cfg.paths.root) / "calibration"
+    calib.mkdir(parents=True, exist_ok=True)
+    grid = {
+        "schema": parameter_recovery.GRID_SCHEMA,
+        "cells": {
+            "wellspecified": {
+                "coverage_at_90": "15/17",
+                "coverage_fraction": 0.882,
+                "max_r_hat": 1.005,
+                "divergences": 0,
+                "per_parameter": [{"parameter": "beta_peer", "hdi_90_covers": True}],
+                "beta_peer_covers": True,
+                "beta_peer_bias": 0.01,
+            },
+            "confounded": {
+                "coverage_at_90": "13/17",
+                "beta_peer_covers": False,
+                "beta_peer_bias": -0.63,
+            },
+        },
+        "contrast": {"clean_contrast": True},
+    }
+    (calib / "recovery_grid.json").write_text(json.dumps(grid))
+    result = parameter_recovery.evaluate(smoke_cfg)
+    assert isinstance(result["mode"], str) and result["mode"].startswith("contrast")
+    assert result["coverage_at_90"] == "15/17"  # wellspecified recovery half
+    assert result["max_r_hat"] == 1.005  # convergence judged on the wellspecified fit
+    assert result["beta_peer_miss_under_confounded"] is True  # confounded failure half
 
 
 def test_pipeline_routes_script_stages_through_uv_when_isolated(

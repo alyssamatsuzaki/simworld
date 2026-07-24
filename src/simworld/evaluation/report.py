@@ -211,16 +211,29 @@ def build_findings(cfg: SimWorldConfig) -> Path:
         if claim_key == "C1":
             # C1 (§18): SUPPORTED requires the full recovery gate — convergence
             # (max R-hat < 1.01, divergences == 0) AND >= 12/16 parameters cover
-            # θ* at 90%. Coverage comes from the parameter_recovery eval family;
-            # convergence from the micro diagnostics. At smoke the draw count is
-            # too small for clean R-hat, so this is INCONCLUSIVE by design.
+            # θ* at 90% under the WELL-SPECIFIED world, plus a biased β_peer under the
+            # confounded world. The recovery grid (calibration.recovery_grid; on at dev)
+            # produces that two-world contrast; without it, coverage falls back to the
+            # shipped single variant. At smoke the draw count is too small for clean
+            # R-hat and the posteriors too wide to resolve β_peer, so C1 is
+            # INCONCLUSIVE by design.
             recovery = eval_metrics.get("parameter_recovery", {}) or {}
             covered = _parse_coverage_count(recovery.get("coverage_at_90"))
             beta_peer_miss = recovery.get("beta_peer_miss_under_confounded")
-            if calib_micro:
-                r_hat = calib_micro.get("max_r_hat", calib_micro.get("r_hat", None))
-                divergences = calib_micro.get("divergences", None)
-                n_params = len(calib_micro.get("parameters", {})) or None
+            # When the recovery grid has run, coverage is graded under the WELL-
+            # SPECIFIED world, so convergence must be judged on that same fit; the grid
+            # carries its R-hat/divergences. Otherwise fall back to the shipped micro
+            # diagnostics (the single-variant world).
+            grid_r_hat = recovery.get("max_r_hat")
+            if grid_r_hat is not None or calib_micro:
+                if grid_r_hat is not None:
+                    r_hat = grid_r_hat
+                    divergences = recovery.get("divergences")
+                    n_params = None
+                else:
+                    r_hat = calib_micro.get("max_r_hat", calib_micro.get("r_hat", None))
+                    divergences = calib_micro.get("divergences", None)
+                    n_params = len(calib_micro.get("parameters", {})) or None
                 if r_hat is not None:
                     param_note = f" across {n_params} fitted parameters" if n_params else ""
                     cov_note = (

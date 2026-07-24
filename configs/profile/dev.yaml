@@ -9,6 +9,7 @@ calibration:
   replicates: 8
   nuts: {warmup: 1000, draws: 1000, chains: 4}
   smc_abc: {particles: 2000}
+  recovery_grid: true            # C1 contrast: re-calibrate under wellspecified AND confounded
 emulator:
   train_episodes: 2000
   epochs: 40

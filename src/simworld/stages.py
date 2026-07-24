@@ -231,7 +231,18 @@ def stage_calibration(cfg: SimWorldConfig, tracker: Tracker) -> list[Path]:
             "calibration_parameters": float(manifest["fitted_parameter_count"]),
         }
     )
-    return [manifest_path, *[Path(path) for path in manifest["outputs"]]]
+    outputs = [manifest_path, *[Path(path) for path in manifest["outputs"]]]
+    if cfg.calibration.recovery_grid:
+        # C1 is a two-world contrast; a single run only ships one variant, so the
+        # recovery grid re-calibrates under both wellspecified and confounded worlds
+        # (dev-gated — off at smoke for the < 6 min budget).
+        _run_script(cfg, "recovery_grid.py", group="bayes")
+        grid_path = output_dir / "recovery_grid.json"
+        if grid_path.is_file():
+            contrast = json.loads(grid_path.read_text()).get("contrast", {})
+            tracker.log_metrics({"c1_clean_contrast": float(bool(contrast.get("clean_contrast")))})
+            outputs.append(grid_path)
+    return outputs
 
 
 def stage_causal(cfg: SimWorldConfig, tracker: Tracker) -> list[Path]:

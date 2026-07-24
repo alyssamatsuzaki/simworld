@@ -6,6 +6,16 @@ Base at audit start: origin/main @ 2ff392d. Branch: claude/audit-and-finish-xvof
 This session independently re-audited the repo against PLAN.md (not trusting prior
 PROGRESS), then fixed every gap found and re-verified by running the plan's own gates.
 
+**Follow-up (post-audit, same branch):** closed two *structural* gaps where a claim was
+un-producible at any scale, not merely under-powered. **C6** — the Stage-10d MARL ablation
+was orphaned from the driver; wired into the `rl` stage and answered at a 50k budget
+(SUPPORTED, a clean negative). **C1** — the well-specified-vs-confounded contrast could not
+be produced because a run ships one DGP variant; added `scripts/recovery_grid.py`
+(dev-gated `calibration.recovery_grid`) which re-calibrates under both worlds and
+`parameter_recovery.evaluate` grades them as one unit. Both are behind regression guards.
+C1 stays INCONCLUSIVE at smoke (the contrast now runs but 150-draw posteriors don't resolve
+it); its SUPPORTED verdict needs the dev draw count.
+
 ## Phase status (all verified this session by running gates)
 
 - [x] 1 Foundation — lint 0, mypy 0 (92 files), fast suite green
@@ -44,7 +54,7 @@ Artifacts wiped, full pipeline re-run from scratch (no cache):
 | 3 | all 16 §2 rows: module+script+test | **PASS** | every row present (renames documented in PROGRESS §2 map + DEVIATIONS); BoTorch 14c is named-optional (§3), recorded |
 | 4 | `make all` (dev) no FAILED stage | **DEGRADED** | full pipeline runs green at smoke (16/16 DONE); dev profile is ~12h+ for the emulator alone on 4 cores — deferred with reason; CI nightly runs dev. See DEVIATIONS |
 | 5 | FINDINGS disclaimer + C1–C6 verdicts | **PASS** | 5 sections in order; C2/C4/C6 SUPPORTED, C1/C3/C5 honestly INCONCLUSIVE at smoke. C6 fixed this session: the Stage-10d MARL ablation was orphaned from the driver (never produced `c6_comparison.json` at any scale); now wired into the `rl` stage and answered at a 50k budget (clean negative — MARL does not change C5) |
-| 6 | Parameter-recovery gate (C1) | **DEGRADED** | verdict logic now counts >=12/16 coverage + divergences + R-hat (F4) and asserts β_peer miss under confounded; the SUPPORTED verdict needs a dev-scale calibration (deferred) |
+| 6 | Parameter-recovery gate (C1) | **DEGRADED** | verdict logic counts >=12/16 coverage + divergences + R-hat (F4) and asserts β_peer miss under confounded. C1's two-world contrast is now WIRED this session: `scripts/recovery_grid.py` (dev-gated `calibration.recovery_grid`) re-calibrates under both wellspecified AND confounded and `parameter_recovery.evaluate` grades them as one unit — previously the contrast was un-producible (a run ships one variant). Validated end-to-end at smoke (rc 0, 174s): wellspecified 16/17 & confounded 15/17, but R-hat 1.02 and wide 150-draw posteriors don't resolve the contrast (`clean_contrast=false`) — SUPPORTED needs a dev-scale calibration |
 | 7 | Four-number causal gate (C2) | **PASS** | gate PASSED; C2 slow tests green; E-value now from real DML CI + add-unobserved refuter (F7/F16) |
 | 8 | Planning-utility gate | **DEGRADED** | asserted in test_policy.py (xfail-documented at smoke, STRICT at dev); env oracle now uses calibrated θ (F10); strict pass needs the dev run |
 | 9 | Ensemble Zarr cube + coverage + P(backfire) | **PASS (cube) / DEGRADED (coverage)** | cube.zarr has dims (policy,draw,seed,quarter,variable)=6×8×1×24×9 (F3); P(backfire\|policy) recorded for all 6; coverage>=0.85 gate wired and enforced but needs dev-scale emulator to clear |
@@ -85,7 +95,9 @@ that cannot be verified autonomously.
 
 1. **dev-profile run** — not executed on this box (emulator alone ~12h on 4 cores).
    Run `make all` (or the §6 science-preserving cuts) on a 16-vCPU node to upgrade
-   C1/C3/C5/C6 to their dev verdicts and clear the coverage>=0.85 gate. The logic is wired.
+   C1/C3/C5 to their dev verdicts and clear the coverage>=0.85 gate. The logic is wired —
+   including C1's two-world recovery grid (`calibration.recovery_grid`, on at dev) and C6's
+   MARL ablation (now in the `rl` stage). C6 is already answered at a 50k budget this session.
 2. **docker build** — blocked by this sandbox's registry egress; verify locally where
    Docker Hub/ghcr are reachable, or rely on CI (already builds+runs the image).
 3. **OOD banner** — the one manual hand-check (steps above).
